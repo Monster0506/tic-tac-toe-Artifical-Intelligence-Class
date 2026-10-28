@@ -27,10 +27,10 @@ fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> O
     if !(0..G::COLUMNS).any(|col| board.can_play(col)) {
         return Outcome::Draw;
     }
+    if (0..G::COLUMNS).any(|col| board.can_play(col) && board.wins(col)) {
+        return Outcome::Win;
+    }
     for col in (0..G::COLUMNS).filter(|&col| board.can_play(col)) {
-        if board.wins(col) {
-            return Outcome::Win;
-        }
         let mut child = board;
         child.play(col);
         alpha = alpha.max(negamax(child, beta.flip(), alpha.flip()).flip());
