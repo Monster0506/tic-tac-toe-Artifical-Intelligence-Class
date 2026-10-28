@@ -82,7 +82,7 @@ fn walk<G: Geometry>(
 }
 
 #[test]
-fn even_width_positions_match_oracle() {
+fn even_width_matches_oracle() {
     walk(
         Board::<Grid<4, 4, u64>>::default(),
         &mut HashSet::new(),
