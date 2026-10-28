@@ -2,14 +2,14 @@ use std::collections::HashSet;
 
 use c4::board::{B76, B87, B98, Board, Geometry, Grid};
 
-/// Positions reachable in play, from John Tromp (tromp.github.io/c4/c4.html).
+// Positions reachable in play, from John Tromp (tromp.github.io/c4/c4.html).
 const POSITIONS_4X4: usize = 161_029;
 const POSITIONS_4X5: usize = 1_706_255;
 const POSITIONS_5X4: usize = 3_945_711;
 
 fn count<G: Geometry>() -> usize {
     let mut seen = HashSet::new();
-    visit(Board::<G>::new(), &mut seen);
+    visit(Board::<G>::default(), &mut seen);
     seen.len()
 }
 
@@ -18,7 +18,7 @@ fn visit<G: Geometry>(board: Board<G>, seen: &mut HashSet<G::Bits>) {
         return;
     }
 
-    for col in 0..G::W {
+    for col in 0..G::COLUMNS {
         if !board.can_play(col) {
             continue;
         }
@@ -48,24 +48,24 @@ fn wide_counts_match_tromp() {
 }
 
 fn fill_last_column<G: Geometry>() {
-    let last = G::W - 1;
-    let mut board = Board::<G>::new();
-    let mut keys = HashSet::from([board.key()]);
+    let last = G::COLUMNS - 1;
+    let mut board = Board::<G>::default();
+    let mut keys = vec![board.key()];
 
-    for _ in 0..G::H {
+    for _ in 0..G::ROWS {
         assert!(board.can_play(last));
         assert!(!board.wins(last));
         board.play(last);
-        keys.insert(board.key());
+        keys.push(board.key());
     }
 
     assert!(!board.can_play(last));
     assert!((0..last).all(|col| board.can_play(col)));
-    assert_eq!(keys.len(), G::H as usize + 1);
+    assert_eq!(keys.iter().collect::<HashSet<_>>().len(), keys.len());
 }
 
 #[test]
-fn last_column_fills_on_spec_boards() {
+fn last_column_fills() {
     fill_last_column::<B76>();
     fill_last_column::<B87>();
     fill_last_column::<B98>();

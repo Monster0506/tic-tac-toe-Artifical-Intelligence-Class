@@ -4,3 +4,38 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused_qualifications = "deny"
+single_use_lifetimes = "deny"
+unused_lifetimes = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+as_conversions = "deny"
+allow_attributes = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+excessive_nesting = "deny"
+min_ident_chars = "deny"
+shadow_unrelated = "deny"
+multiple_inherent_impl = "deny"
+partial_pub_fields = "deny"
+mod_module_files = "deny"
+clone_on_ref_ptr = "deny"
+unwrap_in_result = "deny"
+str_to_string = "deny"
+exit = "deny"
+
+[profile.checked]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true

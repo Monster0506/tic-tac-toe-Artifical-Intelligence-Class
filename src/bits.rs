@@ -18,7 +18,7 @@ pub trait Bits:
 {
     const ZERO: Self;
     const ONE: Self;
-    const WIDTH: u32;
+    const BITS: u32;
 }
 
 macro_rules! bits {
@@ -27,7 +27,7 @@ macro_rules! bits {
             impl Bits for $t {
                 const ZERO: Self = 0;
                 const ONE: Self = 1;
-                const WIDTH: u32 = <$t>::BITS;
+                const BITS: u32 = <$t>::BITS;
             }
         )*
     };
