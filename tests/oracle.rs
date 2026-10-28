@@ -29,18 +29,20 @@ fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> 
     }
     let outcome = board
         .playable()
-        .map(|col| {
-            if board.wins(col) {
-                return Outcome::Win;
-            }
-            let mut child = board;
-            child.play(col);
-            solve(child, memo).flip()
-        })
+        .map(|col| column(board, col, memo))
         .max()
         .unwrap_or(Outcome::Draw);
     memo.insert(key, outcome);
     outcome
+}
+
+fn column<G: Geometry>(board: Board<G>, col: u32, memo: &mut HashMap<G::Bits, Outcome>) -> Outcome {
+    if board.wins(col) {
+        return Outcome::Win;
+    }
+    let mut child = board;
+    child.play(col);
+    solve(child, memo).flip()
 }
 
 fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
@@ -75,6 +77,10 @@ fn walk<G: Geometry>(
 ) {
     if seen.insert(board.key()) {
         assert_eq!(solver.solve(board), solve(board, memo));
+        let truth: Vec<_> = (0..G::COLUMNS)
+            .map(|col| board.can_play(col).then(|| column(board, col, memo)))
+            .collect();
+        assert_eq!(solver.column_outcomes(board), truth);
         for col in board.playable().filter(|&col| !board.wins(col)) {
             let mut child = board;
             child.play(col);

@@ -56,6 +56,21 @@ impl<G: Geometry> Solver<G> {
         self.negamax(board, Outcome::Loss, Outcome::Win)
     }
 
+    #[must_use]
+    pub fn column_outcomes(&mut self, board: Board<G>) -> Vec<Option<Outcome>> {
+        (0..G::COLUMNS)
+            .map(|col| board.can_play(col).then(|| self.reply(board, col)))
+            .collect()
+    }
+
+    fn reply(&mut self, mut board: Board<G>, col: u32) -> Outcome {
+        if board.wins(col) {
+            return Outcome::Win;
+        }
+        board.play(col);
+        self.solve(board).flip()
+    }
+
     fn negamax(&mut self, board: Board<G>, low: Outcome, high: Outcome) -> Outcome {
         if board.playable().next().is_none() {
             return Outcome::Draw;
