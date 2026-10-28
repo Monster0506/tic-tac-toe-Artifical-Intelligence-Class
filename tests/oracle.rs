@@ -10,18 +10,6 @@ use c4::solver::{Outcome, Solver};
 const PONS: &str = include_str!("data/Test_L3_R1");
 const PONS_POSITIONS: usize = 1000;
 
-fn replay<G: Geometry>(moves: &str) -> Option<Board<G>> {
-    let mut board = Board::<G>::default();
-    for ch in moves.chars() {
-        let col = ch.to_digit(10)?.checked_sub(1)?;
-        if col >= G::COLUMNS || !board.can_play(col) || board.wins(col) {
-            return None;
-        }
-        board.play(col);
-    }
-    Some(board)
-}
-
 fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> Outcome {
     let key = board.key();
     if let Some(&known) = memo.get(&key) {
@@ -51,7 +39,7 @@ fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
     let mut solver = Solver::<G>::default();
     for line in PONS.lines() {
         let (moves, score) = line.split_once(' ').ok_or(line)?;
-        let board = replay::<G>(moves).ok_or(line)?;
+        let board = Board::<G>::from_moves(moves).ok_or(line)?;
         let expected = match score.parse::<i32>()? {
             ..0 => Outcome::Loss,
             0 => Outcome::Draw,

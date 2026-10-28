@@ -70,6 +70,20 @@ impl<G: Geometry> Board<G> {
         self.current + self.mask
     }
 
+    #[must_use]
+    pub fn from_moves(moves: &str) -> Option<Self> {
+        moves.chars().try_fold(Self::default(), Self::push)
+    }
+
+    fn push(mut self, ch: char) -> Option<Self> {
+        let col = ch.to_digit(10)?.checked_sub(1)?;
+        if col >= G::COLUMNS || !self.can_play(col) || self.wins(col) {
+            return None;
+        }
+        self.play(col);
+        Some(self)
+    }
+
     fn spot(&self, col: u32) -> G::Bits {
         (self.mask + Self::bottom(col)) & Self::column(col)
     }

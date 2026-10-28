@@ -22,6 +22,7 @@ fn grid_wins(own: &HashSet<(i64, i64)>, (column, row): (i64, i64)) -> bool {
 
 fn play_game<G: Geometry>(seed: u32) {
     let mut board = Board::<G>::default();
+    let mut sequence = String::new();
     let mut stones = [HashSet::new(), HashSet::new()];
     let mut heights = HashMap::new();
     let mut state = seed;
@@ -30,10 +31,12 @@ fn play_game<G: Geometry>(seed: u32) {
             .wrapping_mul(LCG_MULTIPLIER)
             .wrapping_add(LCG_INCREMENT);
         let column = (state >> OUTPUT_SHIFT) % G::COLUMNS;
+        let next = format!("{sequence}{}", column + 1);
         let height = heights.entry(column).or_insert(0_i64);
         let full = *height == i64::from(G::ROWS);
         assert_eq!(board.can_play(column), !full, "seed {seed} step {step}");
         if full {
+            assert!(Board::<G>::from_moves(&next).is_none());
             continue;
         }
         let cell = (i64::from(column), *height);
@@ -41,11 +44,17 @@ fn play_game<G: Geometry>(seed: u32) {
         let win = grid_wins(&stones[mover], cell);
         assert_eq!(board.wins(column), win, "seed {seed} step {step}");
         if win {
+            assert_eq!(
+                Board::<G>::from_moves(&sequence).map(|replayed| replayed.key()),
+                Some(board.key())
+            );
+            assert!(Board::<G>::from_moves(&next).is_none());
             return;
         }
         stones[mover].insert(cell);
         *height += 1;
         board.play(column);
+        sequence = next;
     }
 }
 
