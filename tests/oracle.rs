@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap, error::Error};
 
-use c4::board::{B76, Board, Geometry};
+use c4::board::{B76, Board, Geometry, Grid};
 
 // Pascal Pons, end-game test set Test_L3_R1: http://blog.gamesolver.org/data/Test_L3_R1
 const PONS: &str = include_str!("data/Test_L3_R1");
@@ -39,15 +39,20 @@ fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Ordering>) ->
     outcome
 }
 
-#[test]
-fn pons_positions_match_oracle() -> Result<(), Box<dyn Error>> {
+fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
     assert_eq!(PONS.lines().count(), PONS_POSITIONS);
     let mut memo = HashMap::new();
     for line in PONS.lines() {
         let (moves, score) = line.split_once(' ').ok_or(line)?;
-        let board = replay::<B76>(moves).ok_or(line)?;
+        let board = replay::<G>(moves).ok_or(line)?;
         let expected = score.parse::<i32>()?.cmp(&0);
         assert_eq!(solve(board, &mut memo), expected, "{line}");
     }
     Ok(())
+}
+
+#[test]
+fn pons_positions_match_oracle() -> Result<(), Box<dyn Error>> {
+    pons_matches_oracle::<B76>()?;
+    pons_matches_oracle::<Grid<7, 6, u128>>()
 }
