@@ -30,7 +30,11 @@ fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> O
     if board.playable().any(|col| board.wins(col)) {
         return Outcome::Win;
     }
-    for col in board.playable() {
+    for step in 0..G::COLUMNS {
+        let col = centre_first::<G>(step);
+        if !board.can_play(col) {
+            continue;
+        }
         let mut child = board;
         child.play(col);
         alpha = alpha.max(negamax(child, beta.flip(), alpha.flip()).flip());
@@ -39,4 +43,14 @@ fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> O
         }
     }
     alpha
+}
+
+const fn centre_first<G: Geometry>(step: u32) -> u32 {
+    let centre = G::COLUMNS / 2;
+    let distance = step.div_ceil(2);
+    if step.is_multiple_of(2) {
+        centre + distance
+    } else {
+        centre - distance
+    }
 }
