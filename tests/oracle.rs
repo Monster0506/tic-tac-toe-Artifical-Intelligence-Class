@@ -4,7 +4,7 @@ use std::{
 };
 
 use c4::board::{B76, Board, Geometry, Grid};
-use c4::solver::Outcome;
+use c4::solver::{Outcome, Solver};
 
 // Pascal Pons, end-game test set Test_L3_R1: http://blog.gamesolver.org/data/Test_L3_R1
 const PONS: &str = include_str!("data/Test_L3_R1");
@@ -46,6 +46,7 @@ fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> 
 fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
     assert_eq!(PONS.lines().count(), PONS_POSITIONS);
     let mut memo = HashMap::new();
+    let mut solver = Solver::<G>::default();
     for line in PONS.lines() {
         let (moves, score) = line.split_once(' ').ok_or(line)?;
         let board = replay::<G>(moves).ok_or(line)?;
@@ -55,7 +56,7 @@ fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
             1.. => Outcome::Win,
         };
         assert_eq!(solve(board, &mut memo), expected, "{line}");
-        assert_eq!(c4::solver::solve(board), expected, "{line}");
+        assert_eq!(solver.solve(board), expected, "{line}");
     }
     Ok(())
 }
@@ -70,13 +71,14 @@ fn walk<G: Geometry>(
     board: Board<G>,
     seen: &mut HashSet<G::Bits>,
     memo: &mut HashMap<G::Bits, Outcome>,
+    solver: &mut Solver<G>,
 ) {
     if seen.insert(board.key()) {
-        assert_eq!(c4::solver::solve(board), solve(board, memo));
+        assert_eq!(solver.solve(board), solve(board, memo));
         for col in board.playable().filter(|&col| !board.wins(col)) {
             let mut child = board;
             child.play(col);
-            walk(child, seen, memo);
+            walk(child, seen, memo, solver);
         }
     }
 }
@@ -87,10 +89,12 @@ fn even_width_matches_oracle() {
         Board::<Grid<4, 4, u64>>::default(),
         &mut HashSet::new(),
         &mut HashMap::new(),
+        &mut Solver::default(),
     );
     walk(
         Board::<Grid<4, 4, u128>>::default(),
         &mut HashSet::new(),
         &mut HashMap::new(),
+        &mut Solver::default(),
     );
 }

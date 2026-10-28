@@ -1,3 +1,4 @@
+use crate::bits::Bits;
 use crate::board::{Board, Geometry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -18,18 +19,70 @@ impl Outcome {
     }
 }
 
-#[must_use]
-pub fn solve<G: Geometry>(board: Board<G>) -> Outcome {
-    negamax(board, Outcome::Loss, Outcome::Win)
+const TABLE_BITS: u32 = 16;
+const MASK: usize = (1 << TABLE_BITS) - 1;
+const _: () = assert!(0 < TABLE_BITS && TABLE_BITS < usize::BITS);
+
+#[derive(Clone, Copy)]
+struct Entry<B> {
+    key: B,
+    lower: Outcome,
+    upper: Outcome,
 }
 
-fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> Outcome {
-    if board.playable().next().is_none() {
-        return Outcome::Draw;
+impl<B> Entry<B> {
+    fn new(key: B, value: Outcome, low: Outcome, high: Outcome) -> Self {
+        let lower = if value > low { value } else { Outcome::Loss };
+        let upper = if value < high { value } else { Outcome::Win };
+        Self { key, lower, upper }
     }
-    if board.playable().any(|col| board.wins(col)) {
-        return Outcome::Win;
+}
+
+pub struct Solver<G: Geometry> {
+    slots: Vec<Option<Entry<G::Bits>>>,
+}
+
+impl<G: Geometry> Default for Solver<G> {
+    fn default() -> Self {
+        Self {
+            slots: vec![None; 1 << TABLE_BITS],
+        }
     }
+}
+
+impl<G: Geometry> Solver<G> {
+    #[must_use]
+    pub fn solve(&mut self, board: Board<G>) -> Outcome {
+        self.negamax(board, Outcome::Loss, Outcome::Win)
+    }
+
+    fn negamax(&mut self, board: Board<G>, low: Outcome, high: Outcome) -> Outcome {
+        if board.playable().next().is_none() {
+            return Outcome::Draw;
+        }
+        if board.playable().any(|col| board.wins(col)) {
+            return Outcome::Win;
+        }
+        let key = board.key();
+        let index = key.mix() & MASK;
+        let cached = self.slots[index].filter(|entry| entry.key == key);
+        let alpha = cached.map_or(low, |entry| low.max(entry.lower));
+        let beta = cached.map_or(high, |entry| high.min(entry.upper));
+        if alpha >= beta {
+            return alpha;
+        }
+        let alpha = search(self, board, alpha, beta);
+        self.slots[index] = Some(Entry::new(key, alpha, low, high));
+        alpha
+    }
+}
+
+fn search<G: Geometry>(
+    solver: &mut Solver<G>,
+    board: Board<G>,
+    mut alpha: Outcome,
+    beta: Outcome,
+) -> Outcome {
     for step in 0..G::COLUMNS {
         let col = centre_first::<G>(step);
         if !board.can_play(col) {
@@ -37,7 +90,7 @@ fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> O
         }
         let mut child = board;
         child.play(col);
-        alpha = alpha.max(negamax(child, beta.flip(), alpha.flip()).flip());
+        alpha = alpha.max(solver.negamax(child, beta.flip(), alpha.flip()).flip());
         if alpha >= beta {
             break;
         }
