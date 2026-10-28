@@ -1,4 +1,7 @@
-use std::{collections::HashMap, error::Error};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+};
 
 use c4::board::{B76, Board, Geometry, Grid};
 use c4::solver::Outcome;
@@ -61,4 +64,33 @@ fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
 fn pons_positions_match_oracle() -> Result<(), Box<dyn Error>> {
     pons_matches_oracle::<B76>()?;
     pons_matches_oracle::<Grid<7, 6, u128>>()
+}
+
+fn walk<G: Geometry>(
+    board: Board<G>,
+    seen: &mut HashSet<G::Bits>,
+    memo: &mut HashMap<G::Bits, Outcome>,
+) {
+    if seen.insert(board.key()) {
+        assert_eq!(c4::solver::solve(board), solve(board, memo));
+        for col in board.playable().filter(|&col| !board.wins(col)) {
+            let mut child = board;
+            child.play(col);
+            walk(child, seen, memo);
+        }
+    }
+}
+
+#[test]
+fn even_width_positions_match_oracle() {
+    walk(
+        Board::<Grid<4, 4, u64>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+    );
+    walk(
+        Board::<Grid<4, 4, u128>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+    );
 }
