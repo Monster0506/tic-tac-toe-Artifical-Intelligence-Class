@@ -64,11 +64,13 @@ fn walk<G: Geometry>(
     solver: &mut Solver<G>,
 ) {
     if seen.insert(board.key()) {
+        let label = solver.label(board);
         assert_eq!(solver.solve(board), solve(board, memo));
+        assert_eq!(label.result, solve(board, memo));
         let truth: Vec<_> = (0..G::COLUMNS)
             .map(|col| board.can_play(col).then(|| column(board, col, memo)))
             .collect();
-        assert_eq!(solver.column_outcomes(board), truth);
+        assert_eq!(label.columns, truth);
         for col in board.playable().filter(|&col| !board.wins(col)) {
             let mut child = board;
             child.play(col);

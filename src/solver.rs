@@ -19,6 +19,12 @@ impl Outcome {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Label {
+    pub result: Outcome,
+    pub columns: Vec<Option<Outcome>>,
+}
+
 const TABLE_BITS: u32 = 16;
 const MASK: usize = (1 << TABLE_BITS) - 1;
 const _: () = assert!(0 < TABLE_BITS && TABLE_BITS < usize::BITS);
@@ -57,10 +63,17 @@ impl<G: Geometry> Solver<G> {
     }
 
     #[must_use]
-    pub fn column_outcomes(&mut self, board: Board<G>) -> Vec<Option<Outcome>> {
-        (0..G::COLUMNS)
+    pub fn label(&mut self, board: Board<G>) -> Label {
+        let columns: Vec<_> = (0..G::COLUMNS)
             .map(|col| board.can_play(col).then(|| self.reply(board, col)))
-            .collect()
+            .collect();
+        let result = columns
+            .iter()
+            .flatten()
+            .max()
+            .copied()
+            .unwrap_or(Outcome::Draw);
+        Label { result, columns }
     }
 
     fn reply(&mut self, mut board: Board<G>, col: u32) -> Outcome {
