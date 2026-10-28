@@ -24,13 +24,13 @@ pub fn solve<G: Geometry>(board: Board<G>) -> Outcome {
 }
 
 fn negamax<G: Geometry>(board: Board<G>, mut alpha: Outcome, beta: Outcome) -> Outcome {
-    if !(0..G::COLUMNS).any(|col| board.can_play(col)) {
+    if board.playable().next().is_none() {
         return Outcome::Draw;
     }
-    if (0..G::COLUMNS).any(|col| board.can_play(col) && board.wins(col)) {
+    if board.playable().any(|col| board.wins(col)) {
         return Outcome::Win;
     }
-    for col in (0..G::COLUMNS).filter(|&col| board.can_play(col)) {
+    for col in board.playable() {
         let mut child = board;
         child.play(col);
         alpha = alpha.max(negamax(child, beta.flip(), alpha.flip()).flip());

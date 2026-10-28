@@ -18,11 +18,7 @@ fn visit<G: Geometry>(board: Board<G>, seen: &mut HashSet<G::Bits>) {
         return;
     }
 
-    for col in 0..G::COLUMNS {
-        if !board.can_play(col) {
-            continue;
-        }
-
+    for col in board.playable() {
         let mut child = board;
         child.play(col);
         if board.wins(col) {

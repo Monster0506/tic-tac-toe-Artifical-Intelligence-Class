@@ -50,6 +50,10 @@ impl<G: Geometry> Board<G> {
         self.mask & Self::top(col) == G::Bits::ZERO
     }
 
+    pub fn playable(self) -> impl Iterator<Item = u32> {
+        (0..G::COLUMNS).filter(move |&col| self.can_play(col))
+    }
+
     pub fn wins(&self, col: u32) -> bool {
         debug_assert!(self.can_play(col));
         Self::aligned(self.current | self.spot(col))

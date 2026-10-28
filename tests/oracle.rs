@@ -24,8 +24,8 @@ fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> 
     if let Some(&known) = memo.get(&key) {
         return known;
     }
-    let outcome = (0..G::COLUMNS)
-        .filter(|&col| board.can_play(col))
+    let outcome = board
+        .playable()
         .map(|col| {
             if board.wins(col) {
                 return Outcome::Win;
