@@ -52,6 +52,7 @@ fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
             1.. => Outcome::Win,
         };
         assert_eq!(solve(board, &mut memo), expected, "{line}");
+        assert_eq!(c4::solver::solve(board), expected, "{line}");
     }
     Ok(())
 }
