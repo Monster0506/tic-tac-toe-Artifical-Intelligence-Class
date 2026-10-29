@@ -2,7 +2,8 @@ use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
 use c4::board::{B87, Board};
-use c4::solver::{Outcome, Solver};
+use c4::outcome::Outcome;
+use c4::solver::Solver;
 
 const TABLE_BITS: u32 = 21;
 

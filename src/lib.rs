@@ -2,4 +2,5 @@
 
 pub mod bits;
 pub mod board;
+pub mod outcome;
 pub mod solver;

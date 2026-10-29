@@ -4,7 +4,8 @@ use std::{
 };
 
 use c4::board::{B76, Board, Geometry, Grid};
-use c4::solver::{Outcome, Solver};
+use c4::outcome::Outcome;
+use c4::solver::Solver;
 
 // Pascal Pons, end-game test set Test_L3_R1: http://blog.gamesolver.org/data/Test_L3_R1
 const PONS: &str = include_str!("data/Test_L3_R1");
