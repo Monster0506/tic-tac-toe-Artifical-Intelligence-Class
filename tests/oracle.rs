@@ -9,34 +9,15 @@ use c4::board::{B76, Board, Geometry, Grid};
 use c4::outcome::Outcome;
 use c4::solver::Solver;
 
+#[path = "common/oracle.rs"]
+pub mod oracle;
+use oracle::{column, solve};
+
 // Pascal Pons, end-game test set Test_L3_R1: http://blog.gamesolver.org/data/Test_L3_R1
 const PONS: &str = include_str!("data/Test_L3_R1");
 const PONS_POSITIONS: usize = 1000;
 const TABLE_BITS: u32 = 21;
 const TINY_TABLE_BITS: u32 = 4;
-
-fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> Outcome {
-    let key = board.key();
-    if let Some(&known) = memo.get(&key) {
-        return known;
-    }
-    let outcome = board
-        .playable()
-        .map(|col| column(board, col, memo))
-        .max()
-        .unwrap_or(Outcome::Draw);
-    memo.insert(key, outcome);
-    outcome
-}
-
-fn column<G: Geometry>(board: Board<G>, col: u32, memo: &mut HashMap<G::Bits, Outcome>) -> Outcome {
-    if board.wins(col) {
-        return Outcome::Win;
-    }
-    let mut child = board;
-    child.play(col);
-    solve(child, memo).flip()
-}
 
 fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
     assert_eq!(PONS.lines().count(), PONS_POSITIONS);

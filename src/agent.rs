@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::board::{Board, Geometry};
 use crate::outcome::Outcome;
+use crate::search::{self, Weights};
 use crate::solver::Solver;
 
 pub trait Agent<G: Geometry> {
@@ -36,5 +37,23 @@ impl<G: Geometry> Agent<G> for Perfect<G> {
                 )
             })
             .unwrap_or(0)
+    }
+}
+
+pub struct AlphaBeta {
+    max_depth: u32,
+}
+
+impl AlphaBeta {
+    #[must_use]
+    pub const fn new(max_depth: u32) -> Self {
+        Self { max_depth }
+    }
+}
+
+impl<G: Geometry> Agent<G> for AlphaBeta {
+    fn choose(&mut self, board: Board<G>, deadline: Instant) -> u32 {
+        debug_assert!(board.playable().next().is_some());
+        search::best_column(board, self.max_depth, deadline, Weights::DEFAULT).unwrap_or(0)
     }
 }

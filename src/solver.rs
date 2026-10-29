@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::bits::Bits;
-use crate::board::{Board, COLUMN_LIMIT, Geometry};
+use crate::board::{Board, COLUMN_LIMIT, Geometry, centre_first};
 use crate::outcome::Outcome;
 
 const CLOCK_INTERVAL: u64 = 1024;
@@ -189,14 +189,4 @@ fn search<G: Geometry>(
         }
     }
     Some(alpha)
-}
-
-const fn centre_first<G: Geometry>(step: u32) -> u32 {
-    let centre = G::COLUMNS / 2;
-    let distance = step.div_ceil(2);
-    if step.is_multiple_of(2) {
-        centre + distance
-    } else {
-        centre - distance
-    }
 }

@@ -1,4 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
+
+use c4::board::{Board, Geometry};
+use c4::outcome::Outcome;
 
 pub type Cells = HashSet<(i64, i64)>;
 
@@ -12,4 +16,36 @@ pub fn grid_wins(own: &Cells, (column, row): (i64, i64)) -> bool {
     [(1, 0), (0, 1), (1, 1), (1, -1)]
         .into_iter()
         .any(|(dcol, drow)| 1 + run((dcol, drow)) + run((-dcol, -drow)) >= 4)
+}
+
+#[must_use]
+pub fn solve<G: Geometry, S: BuildHasher>(
+    board: Board<G>,
+    memo: &mut HashMap<G::Bits, Outcome, S>,
+) -> Outcome {
+    let key = board.key();
+    if let Some(&known) = memo.get(&key) {
+        return known;
+    }
+    let outcome = board
+        .playable()
+        .map(|col| column(board, col, memo))
+        .max()
+        .unwrap_or(Outcome::Draw);
+    memo.insert(key, outcome);
+    outcome
+}
+
+#[must_use]
+pub fn column<G: Geometry, S: BuildHasher>(
+    board: Board<G>,
+    col: u32,
+    memo: &mut HashMap<G::Bits, Outcome, S>,
+) -> Outcome {
+    if board.wins(col) {
+        return Outcome::Win;
+    }
+    let mut child = board;
+    child.play(col);
+    solve(child, memo).flip()
 }

@@ -9,6 +9,8 @@ pub trait Geometry: Copy {
 }
 
 pub const COLUMN_LIMIT: usize = 9;
+const FIRST_ODD_ROW_INDEX: u32 = 0;
+const FIRST_EVEN_ROW_INDEX: u32 = 1;
 
 const fn columns_within(columns: u32) -> bool {
     let mut count = 0;
@@ -32,6 +34,14 @@ impl<const W: u32, const H: u32, B: Bits> Geometry for Grid<W, H, B> {
 pub type B76 = Grid<7, 6, u64>;
 pub type B87 = Grid<8, 7, u64>;
 pub type B98 = Grid<9, 8, u128>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Threats {
+    pub first_odd: u32,
+    pub first_even: u32,
+    pub second_odd: u32,
+    pub second_even: u32,
+}
 
 #[derive(Clone, Copy)]
 pub struct Board<G: Geometry> {
@@ -82,6 +92,30 @@ impl<G: Geometry> Board<G> {
         Self::winning_cells(next.mask ^ next.current, next.mask).count_ones()
     }
 
+    pub fn first_to_move(&self) -> bool {
+        self.mask.count_ones().is_multiple_of(2)
+    }
+
+    pub fn empty_cells(&self) -> u32 {
+        G::COLUMNS * G::ROWS - self.mask.count_ones()
+    }
+
+    pub fn threat_rows(&self) -> Threats {
+        let mover = Self::winning_cells(self.current, self.mask);
+        let waiting = Self::winning_cells(self.mask ^ self.current, self.mask);
+        let (first, second) = if self.first_to_move() {
+            (mover, waiting)
+        } else {
+            (waiting, mover)
+        };
+        Threats {
+            first_odd: (first & Self::rows_from(FIRST_ODD_ROW_INDEX)).count_ones(),
+            first_even: (first & Self::rows_from(FIRST_EVEN_ROW_INDEX)).count_ones(),
+            second_odd: (second & Self::rows_from(FIRST_ODD_ROW_INDEX)).count_ones(),
+            second_even: (second & Self::rows_from(FIRST_EVEN_ROW_INDEX)).count_ones(),
+        }
+    }
+
     pub fn play(&mut self, col: u32) {
         debug_assert!(self.can_play(col));
         let spot = self.spot(col);
@@ -122,6 +156,15 @@ impl<G: Geometry> Board<G> {
 
     fn field() -> G::Bits {
         (0..G::COLUMNS).fold(G::Bits::ZERO, |all, col| all | Self::column(col))
+    }
+
+    fn rows_from(first: u32) -> G::Bits {
+        let stripe = (first..G::ROWS)
+            .step_by(2)
+            .fold(G::Bits::ZERO, |cells, row| cells | (G::Bits::ONE << row));
+        (0..G::COLUMNS).fold(G::Bits::ZERO, |all, col| {
+            all | (stripe << (col * Self::STRIDE))
+        })
     }
 
     fn bottom(col: u32) -> G::Bits {
@@ -167,4 +210,15 @@ impl<G: Geometry> Board<G> {
 #[must_use]
 pub fn format_moves(columns: &[u32]) -> String {
     columns.iter().map(|col| (col + 1).to_string()).collect()
+}
+
+#[must_use]
+pub const fn centre_first<G: Geometry>(step: u32) -> u32 {
+    let centre = G::COLUMNS / 2;
+    let distance = step.div_ceil(2);
+    if step.is_multiple_of(2) {
+        centre + distance
+    } else {
+        centre - distance
+    }
 }
