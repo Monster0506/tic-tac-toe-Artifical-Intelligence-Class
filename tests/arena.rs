@@ -38,7 +38,7 @@ fn self_play<G: Geometry>(depth: u32) {
     starts(Board::<G>::default(), depth, &mut found);
     for start in found {
         let result = play(start, &mut first, &mut second, PER_MOVE);
-        assert_eq!(result, solver.solve(start));
+        assert_eq!(Some(result), solver.solve(start, None));
     }
 }
 

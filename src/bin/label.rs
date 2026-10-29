@@ -25,7 +25,10 @@ fn main() -> io::Result<ExitCode> {
             eprintln!("line {}: rejected move string: {moves:?}", index + 1);
             return Ok(ExitCode::FAILURE);
         };
-        let label = solver.label(board);
+        let Some(label) = solver.label(board, None) else {
+            eprintln!("line {}: search aborted", index + 1);
+            return Ok(ExitCode::FAILURE);
+        };
         let symbols: String = label
             .columns
             .iter()

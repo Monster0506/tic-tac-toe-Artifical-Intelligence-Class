@@ -1,8 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
+    time::Instant,
 };
 
+use c4::agent::{Agent, Perfect};
 use c4::board::{B76, Board, Geometry, Grid};
 use c4::outcome::Outcome;
 use c4::solver::Solver;
@@ -49,7 +51,7 @@ fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
             1.. => Outcome::Win,
         };
         assert_eq!(solve(board, &mut memo), expected, "{line}");
-        assert_eq!(solver.solve(board), expected, "{line}");
+        assert_eq!(solver.solve(board, None), Some(expected), "{line}");
     }
     Ok(())
 }
@@ -67,13 +69,16 @@ fn walk<G: Geometry>(
     solver: &mut Solver<G>,
 ) {
     if seen.insert(board.key()) {
-        let label = solver.label(board);
-        assert_eq!(solver.solve(board), solve(board, memo));
-        assert_eq!(label.result, solve(board, memo));
+        let label = solver.label(board, None);
+        assert_eq!(solver.solve(board, None), Some(solve(board, memo)));
+        assert_eq!(
+            label.as_ref().map(|found| found.result),
+            Some(solve(board, memo))
+        );
         let truth: Vec<_> = (0..G::COLUMNS)
             .map(|col| board.can_play(col).then(|| column(board, col, memo)))
             .collect();
-        assert_eq!(label.columns, truth);
+        assert_eq!(label.map(|found| found.columns), Some(truth));
         for col in board.playable().filter(|&col| !board.wins(col)) {
             let mut child = board;
             child.play(col);
@@ -111,5 +116,103 @@ fn tiny_table_matches_oracle() {
         &mut HashSet::new(),
         &mut HashMap::new(),
         &mut Solver::new(TINY_TABLE_BITS),
+    );
+}
+
+fn expired_walk<G: Geometry>(
+    board: Board<G>,
+    seen: &mut HashSet<G::Bits>,
+    memo: &mut HashMap<G::Bits, Outcome>,
+    solver: &mut Solver<G>,
+) {
+    if seen.insert(board.key()) {
+        let aborted = solver.solve(board, Some(Instant::now()));
+        assert!(aborted.is_none_or(|found| found == solve(board, memo)));
+        assert_eq!(solver.solve(board, None), Some(solve(board, memo)));
+        for col in board.playable().filter(|&col| !board.wins(col)) {
+            let mut child = board;
+            child.play(col);
+            expired_walk(child, seen, memo, solver);
+        }
+    }
+}
+
+#[test]
+fn expired_solves_store_nothing() {
+    expired_walk(
+        Board::<Grid<4, 4, u64>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+        &mut Solver::new(TABLE_BITS),
+    );
+    expired_walk(
+        Board::<Grid<4, 4, u128>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+        &mut Solver::new(TABLE_BITS),
+    );
+}
+
+fn expired_root<G: Geometry>() {
+    let expired = Some(Instant::now());
+    assert_eq!(
+        Solver::<G>::new(TABLE_BITS).solve(Board::default(), expired),
+        None
+    );
+}
+
+#[test]
+fn expired_root_returns_none() {
+    expired_root::<Grid<4, 4, u64>>();
+    expired_root::<Grid<4, 4, u128>>();
+}
+
+fn expired_policy_walk<G: Geometry>(
+    board: Board<G>,
+    seen: &mut HashSet<G::Bits>,
+    memo: &mut HashMap<G::Bits, Outcome>,
+) {
+    if seen.insert(board.key()) {
+        let truth: Vec<Option<Outcome>> = (0..G::COLUMNS)
+            .map(|col| board.can_play(col).then(|| column(board, col, memo)))
+            .collect();
+        let has_loss = truth.iter().flatten().any(|&found| found == Outcome::Loss);
+        let has_safe = truth.iter().flatten().any(|&found| found != Outcome::Loss);
+        let proven = |col: u32| {
+            let mut child = board;
+            child.play(col);
+            child.can_win()
+        };
+        let every_loss_proven = (0..G::COLUMNS)
+            .zip(truth.iter().copied())
+            .all(|(col, found)| found != Some(Outcome::Loss) || proven(col));
+        if has_loss && has_safe && every_loss_proven {
+            let mut perfect = Perfect::<G>::new(TINY_TABLE_BITS);
+            let col = perfect.choose(board, Instant::now());
+            let chosen = (0..G::COLUMNS)
+                .zip(truth.iter().copied())
+                .find(|&(each, _)| each == col)
+                .and_then(|(_, found)| found);
+            assert!(chosen.is_some_and(|found| found != Outcome::Loss));
+        }
+        for col in board.playable().filter(|&col| !board.wins(col)) {
+            let mut child = board;
+            child.play(col);
+            expired_policy_walk(child, seen, memo);
+        }
+    }
+}
+
+#[test]
+fn expired_policy_avoids_loss() {
+    expired_policy_walk(
+        Board::<Grid<4, 4, u64>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+    );
+    expired_policy_walk(
+        Board::<Grid<4, 4, u128>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
     );
 }

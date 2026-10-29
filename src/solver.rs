@@ -1,6 +1,10 @@
+use std::time::Instant;
+
 use crate::bits::Bits;
 use crate::board::{Board, COLUMN_LIMIT, Geometry};
 use crate::outcome::Outcome;
+
+const CLOCK_INTERVAL: u64 = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label {
@@ -62,6 +66,7 @@ impl<B: Bits> Bucket<B> {
 pub struct Solver<G: Geometry> {
     buckets: Vec<Bucket<G::Bits>>,
     nodes: u64,
+    deadline: Option<Instant>,
 }
 
 impl<G: Geometry> Solver<G> {
@@ -77,42 +82,55 @@ impl<G: Geometry> Solver<G> {
                 1 << table_bits
             ],
             nodes: 0,
+            deadline: None,
         }
     }
 
     #[must_use]
-    pub fn solve(&mut self, board: Board<G>) -> Outcome {
+    pub fn solve(&mut self, board: Board<G>, deadline: Option<Instant>) -> Option<Outcome> {
+        self.deadline = deadline;
         self.negamax(board, Outcome::Loss, Outcome::Win)
     }
 
     #[must_use]
-    pub fn label(&mut self, board: Board<G>) -> Label {
-        let columns: Vec<_> = (0..G::COLUMNS)
-            .map(|col| board.can_play(col).then(|| self.reply(board, col)))
-            .collect();
+    pub fn label(&mut self, board: Board<G>, deadline: Option<Instant>) -> Option<Label> {
+        let columns = (0..G::COLUMNS)
+            .map(|col| {
+                board
+                    .can_play(col)
+                    .then(|| self.reply(board, col, deadline))
+                    .map_or(Some(None), |reply| reply.map(Some))
+            })
+            .collect::<Option<Vec<_>>>()?;
         let result = columns
             .iter()
             .flatten()
             .max()
             .copied()
             .unwrap_or(Outcome::Draw);
-        Label { result, columns }
+        Some(Label { result, columns })
     }
 
-    fn reply(&mut self, mut board: Board<G>, col: u32) -> Outcome {
+    #[must_use]
+    pub fn reply(
+        &mut self,
+        mut board: Board<G>,
+        col: u32,
+        deadline: Option<Instant>,
+    ) -> Option<Outcome> {
         if board.wins(col) {
-            return Outcome::Win;
+            return Some(Outcome::Win);
         }
         board.play(col);
-        self.solve(board).flip()
+        self.solve(board, deadline).map(Outcome::flip)
     }
 
-    fn negamax(&mut self, board: Board<G>, low: Outcome, high: Outcome) -> Outcome {
+    fn negamax(&mut self, board: Board<G>, low: Outcome, high: Outcome) -> Option<Outcome> {
         if board.playable().next().is_none() {
-            return Outcome::Draw;
+            return Some(Outcome::Draw);
         }
         if board.can_win() {
-            return Outcome::Win;
+            return Some(Outcome::Win);
         }
         let key = board.key();
         let index = key.mix() & (self.buckets.len() - 1);
@@ -120,18 +138,23 @@ impl<G: Geometry> Solver<G> {
         let alpha = cached.map_or(low, |entry| low.max(entry.lower));
         let beta = cached.map_or(high, |entry| high.min(entry.upper));
         if alpha >= beta {
-            return alpha;
+            return Some(alpha);
+        }
+        if self.nodes.is_multiple_of(CLOCK_INTERVAL)
+            && self.deadline.is_some_and(|limit| Instant::now() >= limit)
+        {
+            return None;
         }
         self.nodes += 1;
         let before = self.nodes;
-        let alpha = search(self, board, alpha, beta);
+        let alpha = search(self, board, alpha, beta)?;
         let effort = u32::try_from(self.nodes - before).unwrap_or(u32::MAX);
         let entry = Entry {
             effort,
             ..Entry::new(key, alpha, low, high)
         };
         self.buckets[index].store(entry);
-        alpha
+        Some(alpha)
     }
 }
 
@@ -140,7 +163,7 @@ fn search<G: Geometry>(
     board: Board<G>,
     mut alpha: Outcome,
     beta: Outcome,
-) -> Outcome {
+) -> Option<Outcome> {
     let mut order = [(0, 0); COLUMN_LIMIT];
     let mut count = 0;
     for step in 0..G::COLUMNS {
@@ -160,12 +183,12 @@ fn search<G: Geometry>(
     for &(_, col) in &order[..count] {
         let mut child = board;
         child.play(col);
-        alpha = alpha.max(solver.negamax(child, beta.flip(), alpha.flip()).flip());
+        alpha = alpha.max(solver.negamax(child, beta.flip(), alpha.flip())?.flip());
         if alpha >= beta {
             break;
         }
     }
-    alpha
+    Some(alpha)
 }
 
 const fn centre_first<G: Geometry>(step: u32) -> u32 {

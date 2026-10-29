@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use crate::board::{Board, Geometry};
+use crate::outcome::Outcome;
 use crate::solver::Solver;
 
 pub trait Agent<G: Geometry> {
@@ -21,13 +22,19 @@ impl<G: Geometry> Perfect<G> {
 }
 
 impl<G: Geometry> Agent<G> for Perfect<G> {
-    fn choose(&mut self, board: Board<G>, _deadline: Instant) -> u32 {
+    fn choose(&mut self, board: Board<G>, deadline: Instant) -> u32 {
         debug_assert!(board.playable().next().is_some());
-        let label = self.solver.label(board);
-        (0..G::COLUMNS)
-            .zip(label.columns)
-            .filter_map(|(col, outcome)| Some((outcome?, col)))
-            .max_by_key(|&(outcome, col)| (outcome, std::cmp::Reverse(col)))
-            .map_or(0, |(_, col)| col)
+        board
+            .playable()
+            .max_by_key(|&col| {
+                let reply = self.solver.reply(board, col, Some(deadline));
+                let not_losing_or_unsolved = reply.is_none_or(|outcome| outcome > Outcome::Loss);
+                (
+                    not_losing_or_unsolved,
+                    reply,
+                    std::cmp::Reverse(col.abs_diff(G::COLUMNS / 2)),
+                )
+            })
+            .unwrap_or(0)
     }
 }
