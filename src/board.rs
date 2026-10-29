@@ -8,6 +8,18 @@ pub trait Geometry: Copy {
     type Bits: Bits;
 }
 
+pub const COLUMN_LIMIT: usize = 9;
+
+const fn columns_within(columns: u32) -> bool {
+    let mut count = 0;
+    let mut left = 0;
+    while left < columns {
+        count += 1;
+        left += 1;
+    }
+    count <= COLUMN_LIMIT
+}
+
 #[derive(Clone, Copy)]
 pub struct Grid<const W: u32, const H: u32, B>(PhantomData<B>);
 
@@ -44,6 +56,7 @@ impl<G: Geometry> Board<G> {
             G::COLUMNS * (G::ROWS + 1) <= G::Bits::BITS,
             "board does not fit its bit type"
         );
+        assert!(columns_within(G::COLUMNS), "too many columns");
     };
 
     pub fn can_play(&self, col: u32) -> bool {
@@ -56,7 +69,17 @@ impl<G: Geometry> Board<G> {
 
     pub fn wins(&self, col: u32) -> bool {
         debug_assert!(self.can_play(col));
-        Self::aligned(self.current | self.spot(col))
+        Self::winning_cells(self.current, self.mask) & self.spot(col) != G::Bits::ZERO
+    }
+
+    pub fn can_win(&self) -> bool {
+        Self::winning_cells(self.current, self.mask) & self.playable_cells() != G::Bits::ZERO
+    }
+
+    pub fn threat_count_after(&self, col: u32) -> u32 {
+        let mut next = *self;
+        next.play(col);
+        Self::winning_cells(next.mask ^ next.current, next.mask).count_ones()
     }
 
     pub fn play(&mut self, col: u32) {
@@ -88,6 +111,14 @@ impl<G: Geometry> Board<G> {
         (self.mask + Self::bottom(col)) & Self::column(col)
     }
 
+    fn playable_cells(&self) -> G::Bits {
+        (0..G::COLUMNS).fold(G::Bits::ZERO, |cells, col| cells | self.spot(col))
+    }
+
+    fn field() -> G::Bits {
+        (0..G::COLUMNS).fold(G::Bits::ZERO, |all, col| all | Self::column(col))
+    }
+
     fn bottom(col: u32) -> G::Bits {
         G::Bits::ONE << (col * Self::STRIDE)
     }
@@ -100,12 +131,23 @@ impl<G: Geometry> Board<G> {
         ((G::Bits::ONE << G::ROWS) - G::Bits::ONE) << (col * Self::STRIDE)
     }
 
-    fn aligned(stones: G::Bits) -> bool {
+    fn threats(stones: G::Bits) -> G::Bits {
         [1, Self::STRIDE - 1, Self::STRIDE, Self::STRIDE + 1]
             .into_iter()
-            .any(|shift| {
-                let pairs = stones & (stones >> shift);
-                pairs & (pairs >> (2 * shift)) != G::Bits::ZERO
+            .fold(G::Bits::ZERO, |found, step| {
+                let ahead = stones >> step;
+                let behind = stones << step;
+                let ahead_pair = ahead & (ahead >> step);
+                let behind_pair = behind & (behind << step);
+                found
+                    | (ahead_pair & (ahead >> (2 * step)))
+                    | (behind_pair & (behind << (2 * step)))
+                    | (behind & ahead_pair)
+                    | (behind_pair & ahead)
             })
+    }
+
+    fn winning_cells(stones: G::Bits, mask: G::Bits) -> G::Bits {
+        Self::threats(stones) & Self::field() & !mask
     }
 }

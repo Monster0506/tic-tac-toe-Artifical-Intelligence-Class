@@ -1,5 +1,5 @@
 use crate::bits::Bits;
-use crate::board::{Board, Geometry};
+use crate::board::{Board, COLUMN_LIMIT, Geometry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Outcome {
@@ -88,7 +88,7 @@ impl<G: Geometry> Solver<G> {
         if board.playable().next().is_none() {
             return Outcome::Draw;
         }
-        if board.playable().any(|col| board.wins(col)) {
+        if board.can_win() {
             return Outcome::Win;
         }
         let key = board.key();
@@ -111,11 +111,23 @@ fn search<G: Geometry>(
     mut alpha: Outcome,
     beta: Outcome,
 ) -> Outcome {
+    let mut order = [(0, 0); COLUMN_LIMIT];
+    let mut count = 0;
     for step in 0..G::COLUMNS {
         let col = centre_first::<G>(step);
         if !board.can_play(col) {
             continue;
         }
+        let score = board.threat_count_after(col);
+        let mut at = count;
+        while at > 0 && order[at - 1].0 < score {
+            order[at] = order[at - 1];
+            at -= 1;
+        }
+        order[at] = (score, col);
+        count += 1;
+    }
+    for &(_, col) in &order[..count] {
         let mut child = board;
         child.play(col);
         alpha = alpha.max(solver.negamax(child, beta.flip(), alpha.flip()).flip());

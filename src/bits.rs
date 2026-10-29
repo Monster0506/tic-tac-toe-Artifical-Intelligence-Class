@@ -20,6 +20,7 @@ pub trait Bits:
     const ONE: Self;
     const BITS: u32;
     fn mix(self) -> usize;
+    fn count_ones(self) -> u32;
 }
 
 const FNV1A32_OFFSET_BASIS: usize = 0x811c_9dc5;
@@ -36,6 +37,9 @@ macro_rules! bits {
                     self.to_le_bytes().into_iter().fold(FNV1A32_OFFSET_BASIS, |hash, byte| {
                         (hash ^ usize::from(byte)).wrapping_mul(FNV1A32_PRIME)
                     })
+                }
+                fn count_ones(self) -> u32 {
+                    <$t>::count_ones(self)
                 }
             }
         )*
