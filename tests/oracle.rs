@@ -9,6 +9,8 @@ use c4::solver::{Outcome, Solver};
 // Pascal Pons, end-game test set Test_L3_R1: http://blog.gamesolver.org/data/Test_L3_R1
 const PONS: &str = include_str!("data/Test_L3_R1");
 const PONS_POSITIONS: usize = 1000;
+const TABLE_BITS: u32 = 21;
+const TINY_TABLE_BITS: u32 = 4;
 
 fn solve<G: Geometry>(board: Board<G>, memo: &mut HashMap<G::Bits, Outcome>) -> Outcome {
     let key = board.key();
@@ -36,7 +38,7 @@ fn column<G: Geometry>(board: Board<G>, col: u32, memo: &mut HashMap<G::Bits, Ou
 fn pons_matches_oracle<G: Geometry>() -> Result<(), Box<dyn Error>> {
     assert_eq!(PONS.lines().count(), PONS_POSITIONS);
     let mut memo = HashMap::new();
-    let mut solver = Solver::<G>::default();
+    let mut solver = Solver::<G>::new(TABLE_BITS);
     for line in PONS.lines() {
         let (moves, score) = line.split_once(' ').ok_or(line)?;
         let board = Board::<G>::from_moves(moves).ok_or(line)?;
@@ -85,12 +87,28 @@ fn even_width_matches_oracle() {
         Board::<Grid<4, 4, u64>>::default(),
         &mut HashSet::new(),
         &mut HashMap::new(),
-        &mut Solver::default(),
+        &mut Solver::new(TABLE_BITS),
     );
     walk(
         Board::<Grid<4, 4, u128>>::default(),
         &mut HashSet::new(),
         &mut HashMap::new(),
-        &mut Solver::default(),
+        &mut Solver::new(TABLE_BITS),
+    );
+}
+
+#[test]
+fn tiny_table_matches_oracle() {
+    walk(
+        Board::<Grid<4, 4, u64>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+        &mut Solver::new(TINY_TABLE_BITS),
+    );
+    walk(
+        Board::<Grid<4, 4, u128>>::default(),
+        &mut HashSet::new(),
+        &mut HashMap::new(),
+        &mut Solver::new(TINY_TABLE_BITS),
     );
 }

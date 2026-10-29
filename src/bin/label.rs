@@ -4,6 +4,8 @@ use std::process::ExitCode;
 use c4::board::{B87, Board};
 use c4::solver::{Outcome, Solver};
 
+const TABLE_BITS: u32 = 21;
+
 const fn symbol(outcome: Option<Outcome>) -> char {
     match outcome {
         None => '.',
@@ -14,7 +16,7 @@ const fn symbol(outcome: Option<Outcome>) -> char {
 }
 
 fn main() -> io::Result<ExitCode> {
-    let mut solver = Solver::<B87>::default();
+    let mut solver = Solver::<B87>::new(TABLE_BITS);
     let mut out = io::stdout().lock();
     for (index, line) in io::stdin().lock().lines().enumerate() {
         let moves = line?;
