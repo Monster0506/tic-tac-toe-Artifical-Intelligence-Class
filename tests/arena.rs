@@ -1,0 +1,73 @@
+use std::time::{Duration, Instant};
+
+use c4::agent::{Agent, Perfect};
+use c4::arena::play;
+use c4::board::{Board, Geometry, Grid};
+use c4::outcome::Outcome;
+use c4::solver::Solver;
+
+const TABLE_BITS: u32 = 16;
+const PER_MOVE: Duration = Duration::from_secs(1);
+const START_DEPTH: u32 = 4;
+
+struct Column(u32);
+
+impl<G: Geometry> Agent<G> for Column {
+    fn choose(&mut self, _board: Board<G>, _deadline: Instant) -> u32 {
+        self.0
+    }
+}
+
+fn starts<G: Geometry>(board: Board<G>, depth: u32, found: &mut Vec<Board<G>>) {
+    found.push(board);
+    if depth == 0 {
+        return;
+    }
+    for col in board.playable().filter(|&col| !board.wins(col)) {
+        let mut child = board;
+        child.play(col);
+        starts(child, depth - 1, found);
+    }
+}
+
+fn self_play<G: Geometry>(depth: u32) {
+    let mut solver = Solver::<G>::new(TABLE_BITS);
+    let mut first = Perfect::<G>::new(TABLE_BITS);
+    let mut second = Perfect::<G>::new(TABLE_BITS);
+    let mut found = Vec::new();
+    starts(Board::<G>::default(), depth, &mut found);
+    for start in found {
+        let result = play(start, &mut first, &mut second, PER_MOVE);
+        assert_eq!(result, solver.solve(start));
+    }
+}
+
+#[test]
+fn perfect_play_matches_solver() {
+    self_play::<Grid<4, 4, u64>>(START_DEPTH);
+    self_play::<Grid<4, 4, u128>>(START_DEPTH);
+}
+
+fn forfeits<G: Geometry>() {
+    let start = Board::<G>::default();
+    let mut perfect = Perfect::<G>::new(TABLE_BITS);
+    let off_board = G::COLUMNS;
+    assert_eq!(
+        play(start, &mut Column(off_board), &mut perfect, PER_MOVE),
+        Outcome::Loss
+    );
+    assert_eq!(
+        play(start, &mut perfect, &mut Column(off_board), PER_MOVE),
+        Outcome::Win
+    );
+    assert_eq!(
+        play(start, &mut Column(0), &mut Column(0), PER_MOVE),
+        Outcome::Loss
+    );
+}
+
+#[test]
+fn illegal_column_forfeits() {
+    forfeits::<Grid<4, 4, u64>>();
+    forfeits::<Grid<4, 4, u128>>();
+}

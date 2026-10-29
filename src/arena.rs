@@ -1,0 +1,44 @@
+use std::time::{Duration, Instant};
+
+use crate::agent::Agent;
+use crate::board::{Board, Geometry};
+use crate::outcome::Outcome;
+
+pub fn play<'a, G: Geometry>(
+    start: Board<G>,
+    first: &'a mut dyn Agent<G>,
+    second: &'a mut dyn Agent<G>,
+    per_move: Duration,
+) -> Outcome {
+    let mut board = start;
+    let mut ply = 0_u32;
+    while board.playable().next().is_some() {
+        let agent = if ply.is_multiple_of(2) {
+            &mut *first
+        } else {
+            &mut *second
+        };
+        let col = agent.choose(board, Instant::now() + per_move);
+        if let Some(outcome) = verdict(board, col) {
+            return for_first(ply, outcome);
+        }
+        board.play(col);
+        ply += 1;
+    }
+    Outcome::Draw
+}
+
+fn verdict<G: Geometry>(board: Board<G>, col: u32) -> Option<Outcome> {
+    if col >= G::COLUMNS || !board.can_play(col) {
+        return Some(Outcome::Loss);
+    }
+    board.wins(col).then_some(Outcome::Win)
+}
+
+const fn for_first(ply: u32, outcome: Outcome) -> Outcome {
+    if ply.is_multiple_of(2) {
+        outcome
+    } else {
+        outcome.flip()
+    }
+}
