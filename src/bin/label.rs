@@ -7,15 +7,6 @@ use c4::solver::Solver;
 
 const TABLE_BITS: u32 = 21;
 
-const fn symbol(outcome: Option<Outcome>) -> char {
-    match outcome {
-        None => '.',
-        Some(Outcome::Win) => '+',
-        Some(Outcome::Draw) => '=',
-        Some(Outcome::Loss) => '-',
-    }
-}
-
 fn main() -> io::Result<ExitCode> {
     let mut solver = Solver::<B87>::new(TABLE_BITS);
     let mut out = io::stdout().lock();
@@ -32,9 +23,9 @@ fn main() -> io::Result<ExitCode> {
         let symbols: String = label
             .columns
             .iter()
-            .map(|&outcome| symbol(outcome))
+            .map(|&outcome| outcome.map_or('.', Outcome::symbol))
             .collect();
-        writeln!(out, "{moves} {} {symbols}", symbol(Some(label.result)))?;
+        writeln!(out, "{moves} {} {symbols}", label.result.symbol())?;
         out.flush()?;
     }
     Ok(ExitCode::SUCCESS)

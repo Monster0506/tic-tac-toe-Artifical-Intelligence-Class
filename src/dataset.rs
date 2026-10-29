@@ -1,4 +1,5 @@
 use crate::board::{Board, Geometry};
+use crate::outcome::Outcome;
 
 // SplitMix64, Steele, Lea and Flood (2014); constants from Vigna's splitmix64.c.
 const GOLDEN_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -50,4 +51,29 @@ pub fn sample<G: Geometry>(rng: &mut SplitMix, stones: usize) -> Option<Sample<G
         columns.push(col);
     }
     Some(Sample { columns, board })
+}
+
+pub struct Labelled<G: Geometry> {
+    pub board: Board<G>,
+    pub result: Outcome,
+}
+
+#[must_use]
+pub fn parse_line<G: Geometry>(line: &str) -> Option<Labelled<G>> {
+    let fields: Vec<&str> = line.split(' ').collect();
+    let [moves, result, columns] = fields.as_slice() else {
+        return None;
+    };
+    let board = Board::from_moves(moves)?;
+    let result = Outcome::from_symbol(single_char(result)?)?;
+    let columns_valid = columns
+        .chars()
+        .all(|symbol| symbol == '.' || Outcome::from_symbol(symbol).is_some());
+    columns_valid.then_some(Labelled { board, result })
+}
+
+fn single_char(field: &str) -> Option<char> {
+    let mut chars = field.chars();
+    let only = chars.next()?;
+    chars.next().is_none().then_some(only)
 }

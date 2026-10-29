@@ -14,4 +14,23 @@ impl Outcome {
             Self::Win => Self::Loss,
         }
     }
+
+    #[must_use]
+    pub const fn symbol(self) -> char {
+        match self {
+            Self::Win => '+',
+            Self::Draw => '=',
+            Self::Loss => '-',
+        }
+    }
+
+    #[must_use]
+    pub const fn from_symbol(symbol: char) -> Option<Self> {
+        match symbol {
+            '+' => Some(Self::Win),
+            '=' => Some(Self::Draw),
+            '-' => Some(Self::Loss),
+            _ => None,
+        }
+    }
 }

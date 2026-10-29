@@ -5,22 +5,56 @@ use crate::board::{Board, Geometry, centre_first};
 const WIN_SCORE: i64 = 1_000_000;
 const DRAW_SCORE: i64 = 0;
 const INFINITY: i64 = 2 * WIN_SCORE;
-const GOOD_ROW_THREAT: i64 = 4;
-const OTHER_ROW_THREAT: i64 = 1;
+const GOOD_ROW_THREAT: i32 = 4;
+const OTHER_ROW_THREAT: i32 = 1;
 const CLOCK_INTERVAL: u64 = 1024;
 
+// Entries follow one order: mover good, mover other, opponent good, opponent other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Weights {
-    pub good: i64,
-    pub other: i64,
+pub struct Features(pub [u32; 4]);
+
+impl Features {
+    #[must_use]
+    pub fn of<G: Geometry>(board: Board<G>) -> Self {
+        let threats = board.threat_rows();
+        if board.first_to_move() {
+            Self([
+                threats.first_odd,
+                threats.first_even,
+                threats.second_even,
+                threats.second_odd,
+            ])
+        } else {
+            Self([
+                threats.second_even,
+                threats.second_odd,
+                threats.first_odd,
+                threats.first_even,
+            ])
+        }
+    }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Weights(pub [i32; 4]);
+
 impl Weights {
-    pub const DEFAULT: Self = Self {
-        good: GOOD_ROW_THREAT,
-        other: OTHER_ROW_THREAT,
-    };
-    pub const NONE: Self = Self { good: 0, other: 0 };
+    pub const DEFAULT: Self = Self([
+        GOOD_ROW_THREAT,
+        OTHER_ROW_THREAT,
+        -GOOD_ROW_THREAT,
+        -OTHER_ROW_THREAT,
+    ]);
+    pub const NONE: Self = Self([0; 4]);
+    pub const LEARNED: Self = Self([649, 993, -881, -1144]);
+
+    fn score(self, features: Features) -> i64 {
+        self.0
+            .iter()
+            .zip(features.0)
+            .map(|(&weight, count)| i64::from(weight) * i64::from(count))
+            .sum()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -103,15 +137,7 @@ fn ordered<G: Geometry>(board: Board<G>) -> impl Iterator<Item = u32> {
 }
 
 fn evaluate<G: Geometry>(weights: Weights, board: Board<G>) -> i64 {
-    let threats = board.threat_rows();
-    let first = weigh(weights, threats.first_odd, threats.first_even);
-    let second = weigh(weights, threats.second_even, threats.second_odd);
-    let score = first - second;
-    if board.first_to_move() { score } else { -score }
-}
-
-fn weigh(weights: Weights, good: u32, other: u32) -> i64 {
-    weights.good * i64::from(good) + weights.other * i64::from(other)
+    weights.score(Features::of(board))
 }
 
 #[must_use]

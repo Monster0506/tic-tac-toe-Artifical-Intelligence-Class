@@ -42,18 +42,19 @@ impl<G: Geometry> Agent<G> for Perfect<G> {
 
 pub struct AlphaBeta {
     max_depth: u32,
+    weights: Weights,
 }
 
 impl AlphaBeta {
     #[must_use]
-    pub const fn new(max_depth: u32) -> Self {
-        Self { max_depth }
+    pub const fn new(max_depth: u32, weights: Weights) -> Self {
+        Self { max_depth, weights }
     }
 }
 
 impl<G: Geometry> Agent<G> for AlphaBeta {
     fn choose(&mut self, board: Board<G>, deadline: Instant) -> u32 {
         debug_assert!(board.playable().next().is_some());
-        search::best_column(board, self.max_depth, deadline, Weights::DEFAULT).unwrap_or(0)
+        search::best_column(board, self.max_depth, deadline, self.weights).unwrap_or(0)
     }
 }
