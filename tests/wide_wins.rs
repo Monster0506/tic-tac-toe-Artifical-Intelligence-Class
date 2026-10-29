@@ -1,6 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use c4::board::{B87, B98, Board, Geometry};
+use c4::board::{B87, B98, Board, Geometry, format_moves};
+
+#[path = "common/oracle.rs"]
+pub mod oracle;
+use oracle::grid_wins;
 
 // Linear congruential generator, Numerical Recipes (Press et al.).
 const LCG_MULTIPLIER: u32 = 1_664_525;
@@ -9,20 +13,10 @@ const OUTPUT_SHIFT: u32 = 16;
 const GAMES: u32 = 3_000;
 const MOVES: u32 = 200;
 
-fn grid_wins(own: &HashSet<(i64, i64)>, (column, row): (i64, i64)) -> bool {
-    let run = |(dcol, drow): (i64, i64)| {
-        (1..4)
-            .take_while(|&step| own.contains(&(column + step * dcol, row + step * drow)))
-            .count()
-    };
-    [(1, 0), (0, 1), (1, 1), (1, -1)]
-        .into_iter()
-        .any(|(dcol, drow)| 1 + run((dcol, drow)) + run((-dcol, -drow)) >= 4)
-}
-
 fn play_game<G: Geometry>(seed: u32) {
     let mut board = Board::<G>::default();
-    let mut sequence = String::new();
+    let mut twin = Board::<G>::default();
+    let mut played = Vec::new();
     let mut stones = [HashSet::new(), HashSet::new()];
     let mut heights = HashMap::new();
     let mut state = seed;
@@ -31,7 +25,7 @@ fn play_game<G: Geometry>(seed: u32) {
             .wrapping_mul(LCG_MULTIPLIER)
             .wrapping_add(LCG_INCREMENT);
         let column = (state >> OUTPUT_SHIFT) % G::COLUMNS;
-        let next = format!("{sequence}{}", column + 1);
+        let next = format_moves(&[played.as_slice(), &[column]].concat());
         let height = heights.entry(column).or_insert(0_i64);
         let full = *height == i64::from(G::ROWS);
         assert_eq!(board.can_play(column), !full, "seed {seed} step {step}");
@@ -45,7 +39,7 @@ fn play_game<G: Geometry>(seed: u32) {
         assert_eq!(board.wins(column), win, "seed {seed} step {step}");
         if win {
             assert_eq!(
-                Board::<G>::from_moves(&sequence).map(|replayed| replayed.key()),
+                Board::<G>::from_moves(&format_moves(&played)).map(|replayed| replayed.key()),
                 Some(board.key())
             );
             assert!(Board::<G>::from_moves(&next).is_none());
@@ -54,7 +48,10 @@ fn play_game<G: Geometry>(seed: u32) {
         stones[mover].insert(cell);
         *height += 1;
         board.play(column);
-        sequence = next;
+        twin.play(G::COLUMNS - 1 - column);
+        let mirrored = board.key().min(twin.key());
+        assert_eq!(board.canonical(), mirrored, "seed {seed} step {step}");
+        played.push(column);
     }
 }
 

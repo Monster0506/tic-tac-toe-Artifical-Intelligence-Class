@@ -93,6 +93,11 @@ impl<G: Geometry> Board<G> {
         self.current + self.mask
     }
 
+    pub fn canonical(&self) -> G::Bits {
+        let mirrored = Self::mirror(self.current) + Self::mirror(self.mask);
+        self.key().min(mirrored)
+    }
+
     #[must_use]
     pub fn from_moves(moves: &str) -> Option<Self> {
         moves.chars().try_fold(Self::default(), Self::push)
@@ -131,6 +136,13 @@ impl<G: Geometry> Board<G> {
         ((G::Bits::ONE << G::ROWS) - G::Bits::ONE) << (col * Self::STRIDE)
     }
 
+    fn mirror(bits: G::Bits) -> G::Bits {
+        (0..G::COLUMNS).fold(G::Bits::ZERO, |mirrored, col| {
+            let cells = (bits >> (col * Self::STRIDE)) & Self::column(0);
+            mirrored | (cells << ((G::COLUMNS - 1 - col) * Self::STRIDE))
+        })
+    }
+
     fn threats(stones: G::Bits) -> G::Bits {
         [1, Self::STRIDE - 1, Self::STRIDE, Self::STRIDE + 1]
             .into_iter()
@@ -150,4 +162,9 @@ impl<G: Geometry> Board<G> {
     fn winning_cells(stones: G::Bits, mask: G::Bits) -> G::Bits {
         Self::threats(stones) & Self::field() & !mask
     }
+}
+
+#[must_use]
+pub fn format_moves(columns: &[u32]) -> String {
+    columns.iter().map(|col| (col + 1).to_string()).collect()
 }

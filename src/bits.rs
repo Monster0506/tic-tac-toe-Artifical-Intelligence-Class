@@ -5,6 +5,7 @@ use std::ops::{Add, BitAnd, BitOr, BitXor, Not, Shl, Shr, Sub};
 pub trait Bits:
     Copy
     + Eq
+    + Ord
     + Hash
     + Debug
     + Add<Output = Self>

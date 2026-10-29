@@ -9,11 +9,11 @@ const POSITIONS_5X4: usize = 3_945_711;
 
 fn count<G: Geometry>() -> usize {
     let mut seen = HashSet::new();
-    visit(Board::<G>::default(), &mut seen);
+    visit(Board::<G>::default(), Board::<G>::default(), &mut seen);
     seen.len()
 }
 
-fn visit<G: Geometry>(board: Board<G>, seen: &mut HashSet<G::Bits>) {
+fn visit<G: Geometry>(board: Board<G>, twin: Board<G>, seen: &mut HashSet<G::Bits>) {
     if !seen.insert(board.key()) {
         return;
     }
@@ -21,11 +21,14 @@ fn visit<G: Geometry>(board: Board<G>, seen: &mut HashSet<G::Bits>) {
     for col in board.playable() {
         let mut child = board;
         child.play(col);
+        let mut mirrored = twin;
+        mirrored.play(G::COLUMNS - 1 - col);
+        assert_eq!(child.canonical(), child.key().min(mirrored.key()));
         if board.wins(col) {
             seen.insert(child.key());
             continue;
         }
-        visit(child, seen);
+        visit(child, mirrored, seen);
     }
 }
 

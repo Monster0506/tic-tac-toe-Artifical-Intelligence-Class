@@ -4,5 +4,6 @@ pub mod agent;
 pub mod arena;
 pub mod bits;
 pub mod board;
+pub mod dataset;
 pub mod outcome;
 pub mod solver;
