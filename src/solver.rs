@@ -25,7 +25,7 @@ pub struct Label {
     pub columns: Vec<Option<Outcome>>,
 }
 
-const TABLE_BITS: u32 = 16;
+const TABLE_BITS: u32 = 22;
 const MASK: usize = (1 << TABLE_BITS) - 1;
 const _: () = assert!(0 < TABLE_BITS && TABLE_BITS < usize::BITS);
 
