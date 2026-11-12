@@ -3,7 +3,8 @@
 //! shadows and spring motion.
 //!
 //! On screen all the time: the score capsule at the top, an agent picker down each
-//! side (the chosen agent's numbers under it), and the control bar along the bottom:
+//! side, in the order they would finish a tournament at the current settings, each
+//! with its place (the chosen agent's numbers under it), and the control bar along the bottom:
 //! Play, Reset, and a stepper each for the board, the time per move and the boards at
 //! once. `?` or `H` springs the shortcut list in over the bar; starting a series or
 //! `Esc` puts it away. Only an error shows as a toast under the score.
@@ -26,6 +27,7 @@ use bevy::ui_widgets::{Activate, Button};
 use crate::effects::Won;
 use crate::game::{Action, Pending, Player, Series, Settings};
 use crate::present::Mode;
+use crate::ranking::{Ranking, update_ranking};
 use crate::readout::{Readout, ReadoutSet};
 use crate::roster::ROSTER;
 use crate::scene::UiMargins;
@@ -48,6 +50,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<IntroClock>()
+            .init_resource::<Ranking>()
             .init_resource::<Chrome>()
             .add_systems(Startup, (build_ui, open_from_env))
             .add_observer(on_activate)
@@ -61,7 +64,9 @@ impl Plugin for UiPlugin {
                     ripples,
                     update_values,
                     update_cards,
+                    update_ranking,
                     update_rows,
+                    reorder_rows,
                     pills,
                     lens,
                     glint,
@@ -196,6 +201,17 @@ struct Pill {
     y: f32,
     velocity: f32,
 }
+/// A picker row: it stands in its agent's tournament place, springing there.
+#[derive(Component)]
+struct PickerRow {
+    agent: usize,
+    y: f32,
+    velocity: f32,
+}
+/// The place number left of an agent's name.
+#[derive(Component)]
+struct PlaceLabel(usize);
+
 /// A picker row's title, which is brighter when chosen.
 #[derive(Component)]
 struct RowLabel(Player, usize);
@@ -643,9 +659,9 @@ fn picker(root: &mut ChildSpawnerCommands<'_>, player: Player) {
         glass(node, THICK, 28.0),
     ))
     .with_children(|pane| {
+        // Rows stand in tournament order; each springs to its place when it changes.
         pane.spawn(Node {
-            flex_direction: FlexDirection::Column,
-            row_gap: px(ROW_GAP),
+            height: px(8.0 * (ROW + ROW_GAP) - ROW_GAP),
             ..default()
         })
         .with_children(|list| {
@@ -667,10 +683,40 @@ fn picker(root: &mut ChildSpawnerCommands<'_>, player: Player) {
                 Pickable::IGNORE,
             ));
             for (agent, info) in ROSTER.iter().enumerate() {
-                list.spawn((pressable(Look::Row, ROW, Action::Pick(player, agent)), ZIndex(1)))
-                    .with_children(|row| {
-                        row.spawn((text(info.title, medium_font(), 15.0, MUTED), RowLabel(player, agent), Pickable::IGNORE));
+                list.spawn((
+                    pressable(Look::Row, ROW, Action::Pick(player, agent)),
+                    PickerRow { agent, y: -1.0, velocity: 0.0 },
+                    ZIndex(1),
+                ))
+                .insert(Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0),
+                    right: px(0),
+                    ..button_node(Look::Row, ROW)
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        Node {
+                            align_items: AlignItems::Center,
+                            column_gap: px(10),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|words| {
+                        words.spawn((
+                            text("", bold_font(), 12.0, FAINT),
+                            PlaceLabel(agent),
+                            Node {
+                                width: px(14),
+                                ..default()
+                            },
+                            Pop::new(FAINT, 0.3),
+                            Pickable::IGNORE,
+                        ));
+                        words.spawn((text(info.title, medium_font(), 15.0, MUTED), RowLabel(player, agent), Pickable::IGNORE));
                     });
+                });
             }
         });
         pane.spawn((
@@ -697,7 +743,7 @@ fn picker(root: &mut ChildSpawnerCommands<'_>, player: Player) {
                 ..default()
             })
             .with_children(|tiles| {
-                for (index, caption) in ["Elo", "8\u{d7}7 acc.", "9\u{d7}8 acc."].into_iter().enumerate() {
+                for (index, caption) in ["Rank", "8\u{d7}7 acc.", "9\u{d7}8 acc."].into_iter().enumerate() {
                     tiles
                         .spawn((
                             Node {
@@ -1115,6 +1161,7 @@ fn update_values(readout: Res<Readout>, settings: Res<Settings>, mut texts: Quer
 fn update_cards(
     time: Res<Time>,
     settings: Res<Settings>,
+    ranking: Res<Ranking>,
     mut cards: Query<(&mut CardBox, &mut UiTransform)>,
     mut texts: Query<(&CardText, &mut Text)>,
 ) {
@@ -1133,14 +1180,15 @@ fn update_cards(
             transform.translation = translation;
         }
     }
-    if !settings.is_changed() {
+    if !settings.is_changed() && !ranking.is_changed() {
         return;
     }
     for (part, mut text) in &mut texts {
         let CardText::Tile(player, _) = *part;
-        let info = &ROSTER[settings.agent[player.seat()]];
+        let agent = settings.agent[player.seat()];
+        let info = &ROSTER[agent];
         let wanted = match *part {
-            CardText::Tile(_, 0) => format!("{:.0}", info.elo),
+            CardText::Tile(_, 0) => ranking.place[agent].map_or_else(|| "\u{2013}".to_owned(), |place| format!("#{place}")),
             CardText::Tile(_, 1) => format!("{:.1}%", info.acc_8x7 * 100.0),
             CardText::Tile(..) => format!("{:.1}%", info.acc_9x8 * 100.0),
         };
@@ -1158,12 +1206,53 @@ fn update_rows(settings: Res<Settings>, mut labels: Query<(&RowLabel, &mut TextC
     }
 }
 
+/// Rows spring to their agent's place; the place numbers update (and pop) with them.
+fn reorder_rows(
+    time: Res<Time>,
+    ranking: Res<Ranking>,
+    mut rows: Query<(&mut PickerRow, &mut Node)>,
+    mut places: Query<(&PlaceLabel, &mut Text, &mut Pop)>,
+) {
+    let dt = time.delta_secs().min(1.0 / 20.0);
+    for (mut row, mut node) in &mut rows {
+        #[expect(clippy::cast_precision_loss, reason = "eight rows")]
+        let target = ranking.slot[row.agent] as f32 * (ROW + ROW_GAP);
+        if row.y < 0.0 {
+            row.y = target;
+        }
+        let force = (target - row.y) * 260.0 - row.velocity * 25.0;
+        row.velocity += force * dt;
+        row.y += row.velocity * dt;
+        if (target - row.y).abs() < 0.05 && row.velocity.abs() < 0.5 {
+            row.y = target;
+            row.velocity = 0.0;
+        }
+        if node.top != px(row.y) {
+            node.top = px(row.y);
+        }
+    }
+    if !ranking.is_changed() {
+        return;
+    }
+    for (label, mut text, mut pop) in &mut places {
+        let wanted = ranking.place[label.0].map_or_else(String::new, |place| place.to_string());
+        if set(&mut text, &wanted) {
+            pop.age = 0.0;
+        }
+    }
+}
+
 /// Each picker's pill flows to the chosen row, stretching a little as it moves.
-fn pills(time: Res<Time>, settings: Res<Settings>, mut pills: Query<(&mut Pill, &mut Node, &mut UiTransform)>) {
+fn pills(
+    time: Res<Time>,
+    settings: Res<Settings>,
+    ranking: Res<Ranking>,
+    mut pills: Query<(&mut Pill, &mut Node, &mut UiTransform)>,
+) {
     let dt = time.delta_secs().min(1.0 / 20.0);
     for (mut pill, mut node, mut transform) in &mut pills {
         #[expect(clippy::cast_precision_loss, reason = "eight rows")]
-        let target = settings.agent[pill.player.seat()] as f32 * (ROW + ROW_GAP);
+        let target = ranking.slot[settings.agent[pill.player.seat()]] as f32 * (ROW + ROW_GAP);
         if pill.y < 0.0 {
             pill.y = target;
         }

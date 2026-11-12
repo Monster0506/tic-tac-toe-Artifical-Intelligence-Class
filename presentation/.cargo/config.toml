@@ -1,0 +1,4 @@
+# `cargo ranking`: runs the ranking study (src/study.rs) as its own program. Ctrl+C
+# stops it; run it again to carry on. Results go to ranking/games.csv.
+[alias]
+ranking = "run --release --bin ranking --"

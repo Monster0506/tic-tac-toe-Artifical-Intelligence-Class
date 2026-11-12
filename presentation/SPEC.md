@@ -64,6 +64,19 @@ disagrees, and later requests win over earlier ones.
 24. "Also, improve the presenter notes content to make it a bit smarter and more
     presenter'ey also include a slide about each specific algorithm and a bump about
     like why its good or bad or just some info about it"
+25. "Instead of elo show 'rank' like who would win the tournament. Add a 10s option,
+    and run the tournament better to get real numbers. Like real tournament. Then have
+    it where when the settings change, the order of the agents changes too. Show the
+    'rank' of the agent on the left of the agent and when I change the settings have it
+    change the order. But do a real study first to get this data for real for all of
+    the different sizes. If two literally tie, just don't change where they are then I
+    guess."
+26. (Study size) "Do the overnight one but make it so that if I do like cargo run
+    --ranking it runs it and saves it somewhere where git can remember. If I do Ctrl+C
+    it shouldn't lose too much progress. This is important so that I can save the
+    results. I can then run this on my desktop or something like that if I need."
+27. "The user should still be able to use their device while this runs as well. So
+    base it off of what they have as space on their GPU and CPU"
 
 What they mean in practice:
 
@@ -312,7 +325,7 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
   both agents, `? / Slides`, an agent picker down each side, and the control bar
   along the bottom.
   - **Control bar** (always visible): Play, Reset, then Start (Empty or Random, one
-    click switches it, `O`), then a stepper each for Board, Per move and Boards
+    click switches it, `O`), then a stepper each for Board, Per move (1 ms to 10 s) and Boards
     (minus, a small caption over the value, plus, in a faint capsule).
   - **Start:** Empty starts every match from an empty board. Random starts it from a
     random opening of 4 to 8 stones (at most a quarter of the board; no immediate
@@ -320,10 +333,29 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
     restarts the match (the score is kept). From an empty board the handcrafted
     alpha-beta usually beats MCTS; from random openings MCTS wins about half, as in the
     tournament.
-  - **Agent pickers** (always visible): the eight agents as rows (names only); a
-    pill flows to the chosen one, whose name turns its side's colour. Under them,
-    three tiles (Elo, 8x7 and 9x8 accuracy), with no family label. No explanations of
-    the algorithms and no "moves first/second" header.
+  - **Agent pickers** (always visible): the eight agents as rows, **in the order they
+    would finish a tournament at the current settings** (board, time per move, start),
+    each with its place on the left. Changing a setting re-ranks them and the rows
+    spring to their new places (agents with equal scores keep their rows); the pill
+    follows the chosen agent. Under them three tiles: Rank (`#1`), 8x7 and 9x8
+    accuracy. No family label, no explanations of the algorithms, no "moves
+    first/second" header.
+  - **The ranking study** (`src/study.rs`, `cargo ranking`): a full round robin of all
+    eight agents, every pair once with each colour, for each of the 6 boards, each of
+    the 10 times per move (1 ms to 10 s) and both starts. Rounds: 20 up to 0.25 s, 6 up
+    to 2 s, 3 at 5 s, 2 at 10 s (about 14 hours on the laptop, overnight). Every game
+    is appended to `ranking/games.csv` (tracked by git) and flushed, so Ctrl+C loses
+    only the games in play and the next run resumes. It runs as its own program
+    (`ranking.exe`) so the app can be rebuilt meanwhile; `cargo run --release --
+    --ranking` works too. It runs at below-normal priority (`C4_STUDY_PRIORITY=normal`
+    to override), so the computer stays usable and the study takes only spare CPU; it
+    never uses the GPU (every agent, the network too, runs on the CPU). `C4_WORKERS`
+    sets the threads (default: logical cores minus two), `C4_STUDY_MS=1,10` limits
+    the times (to split the study between machines). The random 9x8 cells at 0.5, 1,
+    5 and 10 s hold the original tournament's 2,800 games each
+    (`--import-tournament`), so the study skips them. The app reads the CSV when it
+    is built (`src/ranking.rs`): place = tournament score (1 a win, 1/2 a draw); a
+    setting with no games yet borrows the nearest time that has some.
   - **Shortcut list** (`?` or `H`), the only pane on demand. It springs in over the
     bar; starting a series, or `Esc`, puts it away. No brand, status line, move list,
   thinking bar, Step button or starting-position option: the hovering disc shows who

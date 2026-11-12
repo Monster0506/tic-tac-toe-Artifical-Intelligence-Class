@@ -27,6 +27,9 @@ pub const LADDER: [BoardSize; 6] = [
 
 pub const DEFAULT_SIZE: usize = 5;
 
+/// Seconds per move the arena offers (and the ranking study plays).
+pub const TIMES: [f32; 10] = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0];
+
 /// A running game with both agents, independent of the board size.
 pub trait Match {
     /// The agent whose turn it is picks a column before `deadline` (it may overrun slightly).

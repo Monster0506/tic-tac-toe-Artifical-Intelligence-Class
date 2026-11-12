@@ -7,11 +7,13 @@ mod engine;
 mod game;
 mod present;
 mod presenter;
+mod ranking;
 mod readout;
 mod roster;
 mod scene;
 mod sizes;
 mod slides;
+mod study;
 mod theme;
 mod ui;
 
@@ -25,6 +27,12 @@ use scene::ScenePlugin;
 use ui::UiPlugin;
 
 fn main() {
+    // `cargo run --release -- --ranking` also runs the ranking study; `cargo ranking`
+    // runs it as its own program, so the app can be rebuilt meanwhile.
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--ranking" || arg == "--import-tournament") {
+        std::process::exit(study::main(&args));
+    }
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {

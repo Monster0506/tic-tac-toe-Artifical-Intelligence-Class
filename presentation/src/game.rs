@@ -17,7 +17,7 @@ use crate::scene::{Disc, Falling, Morphing, SceneAssets, Spot, dress_disc, halo,
 use crate::sizes::{BoardSize, DEFAULT_SIZE, LADDER};
 
 /// Time per move: the agent's thinking budget and the minimum time a move takes.
-pub const TIMES: [f32; 9] = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0];
+pub use crate::sizes::TIMES;
 pub const DEFAULT_TIME: usize = 6;
 /// Below this time per move discs appear in place instead of dropping.
 const ANIMATE_FROM: f32 = 0.1;
