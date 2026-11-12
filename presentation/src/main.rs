@@ -86,7 +86,7 @@ fn main() {
 
 /// Developer aid: `C4_SCREENSHOT=out.png [C4_KEYS=--[[] [C4_AUTOPLAY=1] [C4_SECONDS=6]`
 /// picks Yellow's agent `C4_YELLOW` (roster index), presses the shortcut keys in
-/// `C4_KEYS` (- + [ ] o . ,), optionally starts a match or opens
+/// `C4_KEYS` (- + [ ] o . ,; o switches empty / random start), optionally starts a match or opens
 /// slide `C4_SLIDE`, saves a
 /// screenshot after a few seconds and exits. Used to check the scene layout.
 #[derive(Resource)]
@@ -252,6 +252,7 @@ fn capture_and_exit(
                     ']' => Some(Action::Slower),
                     '.' => Some(Action::MoreBoards),
                     ',' => Some(Action::FewerBoards),
+                    'o' => Some(Action::Opening),
                     'a' => {
                         mode.set(Mode::Arena);
                         None

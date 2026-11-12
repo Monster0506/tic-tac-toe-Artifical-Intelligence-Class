@@ -22,9 +22,8 @@ const fn hexa(rgb: u32, alpha: f32) -> Color {
 }
 
 // ------------------------------------------------------------------ the palette
-// quiz-catch's light palette (`styles.css`, `prefers-color-scheme: light`), with the
-// project's two accent colours: orange `#ff922f` and deep red `#b61b0d`. The discs
-// keep their own red and yellow.
+// quiz-catch's light palette (`styles.css`, `prefers-color-scheme: light`), with
+// orange `#ff922f` as the one accent.
 
 /// The wallpaper everything floats over.
 pub const BG: Color = hex(0x00f7_f3e8);
@@ -32,17 +31,9 @@ pub const RAISED: Color = hex(0x00ef_e9d9);
 pub const TEXT: Color = hex(0x0028_2820);
 pub const MUTED: Color = hex(0x005f_5b49);
 pub const FAINT: Color = hex(0x008f_8a75);
-/// Accent one: orange.
 pub const ACCENT: Color = hex(0x00ff_922f);
-/// Accent two, deep red (`#b61b0d`): where orange runs to in the ember gradient, and
-/// accent text on cream (orange is too light to read there).
-pub const EMBER: Color = hex(0x00b6_1b0d);
-pub const ACCENT_INK: Color = EMBER;
-
-/// The ember gradient: orange at 0, deep red at 1.
-pub fn heat(t: f32) -> Color {
-    ACCENT.mix(&EMBER, t.clamp(0.0, 1.0))
-}
+/// The accent dark enough to read as text on cream.
+pub const ACCENT_INK: Color = hex(0x00b4_530a);
 pub const ON_ACCENT: Color = hex(0x0028_2820);
 /// "success" and "rain": agent family colours on the slides.
 pub const GREEN: Color = hex(0x006f_7a0a);

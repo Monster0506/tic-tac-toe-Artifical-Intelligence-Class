@@ -79,6 +79,8 @@ pub enum Action {
     FewerBoards,
     PlayPause,
     Reset,
+    /// Switches between starting from an empty board and from a random opening.
+    Opening,
     /// Opens the presentation (see `present.rs`).
     Present,
 }
@@ -93,6 +95,9 @@ pub struct Settings {
     pub time: usize,
     /// How many boards play at once.
     pub boards: usize,
+    /// Start each match from a random opening (4 to 8 stones, like the tournament's
+    /// random openings) instead of an empty board.
+    pub random_opening: bool,
 }
 
 impl Default for Settings {
@@ -102,6 +107,7 @@ impl Default for Settings {
             size: DEFAULT_SIZE,
             time: DEFAULT_TIME,
             boards: 1,
+            random_opening: false,
         }
     }
 }
@@ -352,6 +358,7 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut pending: ResMut<Pending>) {
         (KeyCode::BracketLeft, Action::Faster),
         (KeyCode::Period, Action::MoreBoards),
         (KeyCode::Comma, Action::FewerBoards),
+        (KeyCode::KeyO, Action::Opening),
         (KeyCode::KeyP, Action::Present),
     ];
     for (key, action) in bindings {
@@ -408,14 +415,25 @@ fn start(commands: &mut Commands, settings: &Settings, game: &mut Game, paused: 
     renew(commands, game, size);
     game.phase = Phase::Starting;
     game.start_paused = paused;
+    let seed = clock_seed() ^ (u64::try_from(game.table).unwrap_or(0) << 48);
     game.engine = Some(Engine::spawn(Config {
         size,
         red: ROSTER[settings.agent[0]].entrant,
         yellow: ROSTER[settings.agent[1]].entrant,
-        // Every match starts from an empty board.
-        opening_stones: 0,
-        seed: clock_seed() ^ (u64::try_from(game.table).unwrap_or(0) << 48),
+        opening_stones: opening_stones(settings, size, seed),
+        seed,
     }));
+}
+
+/// How many random stones a match starts with: none for an empty board, else 4 to 8
+/// (at most a quarter of the board, so the small boards keep room to play).
+fn opening_stones(settings: &Settings, size: BoardSize, seed: u64) -> usize {
+    if !settings.random_opening {
+        return 0;
+    }
+    let cells = usize::try_from(size.columns * size.rows).unwrap_or(0);
+    let wanted = 4 + usize::try_from((seed >> 7) % 5).unwrap_or(0);
+    wanted.min(cells / 4).max(2)
 }
 
 /// Empties a table and leaves it idle.
@@ -493,6 +511,10 @@ fn handle_actions(
                 }
             }
             Action::Present => mode.set(Mode::Slides),
+            Action::Opening => {
+                settings.random_opening = !settings.random_opening;
+                restart = true;
+            }
             Action::Reset => {
                 for mut game in &mut games {
                     reset(&mut commands, &settings, &mut game);

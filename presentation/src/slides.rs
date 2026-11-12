@@ -139,15 +139,34 @@ const fn lit(label: &'static str, value: f32, text: &'static str, beat: usize, l
 /// A 7x6 game, 1-based columns as `Board::from_moves` expects. Solved at startup.
 pub const SOLVED_MOVES: &str = "4453432233554";
 
+/// An agent's slide: the same four numbers for every agent, so the eight slides compare
+/// at a glance. Games won first, then both accuracies, then wins kept against the
+/// solver.
+macro_rules! spotlight {
+    ($won:literal, $won_text:literal, $acc87:literal, $acc87_text:literal, $acc98:literal, $acc98_text:literal, $kept:literal, $kept_text:literal) => {
+        Visual::Bars(Bars {
+            caption: "the same four numbers for every agent (%)",
+            floor: 0.0,
+            ceiling: 100.0,
+            items: &[
+                bar("9x8 games won", $won, $won_text, 0),
+                bar("8x7 move accuracy", $acc87, $acc87_text, 1),
+                bar("9x8 late-game accuracy", $acc98, $acc98_text, 1),
+                bar("8x7 wins kept vs solver", $kept, $kept_text, 2),
+            ],
+        })
+    };
+}
+
 pub const SLIDES: &[Slide] = &[
     Slide {
         kicker: "group 3  \u{b7}  TJ Raklovits and Andrew Roddy",
         title: "Connect Four AI",
         visual: Visual::Game(&[drop(9, 8, &[4, 4, 3, 5, 5, 3, 4, 2, 6, 4, 3, 3, 5, 2, 6, 6, 2])]),
         beats: &[say(
-            "Hey everyone, we're TJ and Andrew from group 3. Our project is Connect Four, played by eight \
-             different AI agents. We trained them on an 8 by 7 board and tested them on 9 by 8. And \
-             everything you'll see today, these slides included, is running live in our Rust code.",
+            "Hi everyone, we're TJ and Andrew, group 3. Our project: eight different AI agents playing Connect \
+             Four. Here's the twist: we trained them on a board we can solve, 8 by 7, and tested them on one \
+             nobody has solved, 9 by 8. Everything you see today, these slides included, runs live in our Rust code.",
         )],
     },
     Slide {
@@ -159,13 +178,13 @@ pub const SLIDES: &[Slide] = &[
             Stage { columns: 9, rows: 8, name: "9 \u{d7} 8", note: "never solved\nour test board", moves: &[8, 3, 4, 4, 5, 1] },
         ]),
         beats: &[
-            say("This is the normal 7 by 6 board. It's solved: with perfect play the first player wins."),
-            say("Add a column and a row and you get 8 by 7. John Tromp solved it too. This is where we trained."),
+            say("Start with the board you know: 7 by 6. It's solved. With perfect play, the first player always wins."),
+            say("Add a column and a row: 8 by 7. John Tromp solved this one too, so that's where we trained."),
             show(
                 "does what they learn carry over, and why?",
-                "One more of each and you're at 9 by 8. Nobody has solved it; on our hardware it would take something \
-                 like 15 years. So our question: if we train agents on a board we can solve, do they still play well \
-                 on one we can't? And if some methods carry over better than others, why?",
+                "One more of each gets you 9 by 8, and that has never been solved. On our hardware it would take \
+                 roughly 15 years. So here's our question: if agents learn on a board we can solve, do they still \
+                 play well on one we can't? And if some methods carry over better, why?",
             ),
         ],
     },
@@ -183,10 +202,10 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("To give you a feel for the size: 7 by 6 has about 4.5 trillion legal positions."),
-            say("For 8 by 7 the upper bound is around 10 to the 26."),
-            say("And 9 by 8 is around 10 to the 34."),
-            say("This is a log scale, so every step up is millions of times bigger. You just can't brute force that."),
+            say("How big are we talking? Standard Connect Four has about 4.5 trillion positions. Already a lot."),
+            say("8 by 7 jumps to roughly 10 to the 26."),
+            say("And 9 by 8, roughly 10 to the 34."),
+            say("Remember, this is a log scale: each step is millions of times bigger. Brute force is simply off the table."),
         ],
     },
     Slide {
@@ -194,12 +213,12 @@ pub const SLIDES: &[Slide] = &[
         title: "An exact solver",
         visual: Visual::Solved,
         beats: &[
-            say("Step one was an exact solver: alpha-beta search on bitboards with a transposition table, like the published solvers."),
-            say("Give it any position and it says whether each column wins, draws or loses."),
-            say("These labels were worked out live when the app started. Here, the marked column wins."),
+            say("So step one: build a perfect player anyway. Alpha-beta on bitboards with a transposition table, the same tricks published solvers use."),
+            say("Hand it any position and it tells you, for every column: win, draw or loss."),
+            say("These letters were computed live when the app launched. And watch: it plays the winning column."),
             show(
                 "0 wrong",
-                "We checked it against all 67,557 UCI positions and 6,000 of Pascal Pons' tests. It got every one right.",
+                "Can you trust it? We checked all 67,557 UCI positions and 6,000 of Pascal Pons' tests. Zero mistakes.",
             ),
         ],
     },
@@ -222,13 +241,13 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("So why not just solve 9 by 8? Late in the game it's quick, about a tenth of a second."),
-            say("With fewer stones it slows down: a third of a second at 30."),
-            say("Two seconds at 26 stones."),
-            say("At 24 the median is 12 seconds, and the worst one we saw took 31 minutes."),
-            say("At 20 stones it's over a minute."),
-            say("And at 16 stones every probe we ran went past ten minutes."),
-            say("Even 8 by 7 with six stones took over half an hour. That wall is why we needed learning."),
+            say("So why not just solve 9 by 8? Near the end of a game it's easy: about a tenth of a second."),
+            say("Take stones away and it slows down: a third of a second at 30."),
+            say("Two seconds at 26."),
+            say("At 24 stones the median is 12 seconds, and our worst case took 31 minutes."),
+            say("At 20 stones, over a minute each."),
+            say("At 16, every single probe blew past ten minutes."),
+            say("Even 8 by 7 with only six stones took over half an hour. That wall is exactly why we turned to learning."),
         ],
     },
     Slide {
@@ -245,11 +264,11 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("We used the solver to build our data: about 107 thousand 8 by 7 positions, every column labelled."),
-            say("Plus 2,000 harder openings, 10 to 12 stones, just for testing."),
+            say("Instead, the solver became our teacher: about 107 thousand 8 by 7 positions, every column labelled."),
+            say("Plus 2,000 tricky openings, 10 to 12 stones in, held back just for testing."),
             show(
                 "192 cores, one position each",
-                "And about 10 thousand late game 9 by 8 positions, to test transfer, solved on a 192 core cloud machine.",
+                "And to test transfer, about 10 thousand late game 9 by 8 positions, solved on a 192 core cloud machine.",
             ),
         ],
     },
@@ -259,14 +278,144 @@ pub const SLIDES: &[Slide] = &[
         // MCTS, AB learned, AB handcrafted, network MCTS, Allis, solver, network, safe random.
         visual: Visual::Agents(&[0, 2, 1, 3, 4, 1, 3, 5]),
         beats: &[
-            say("Then we built eight agents. First, Monte Carlo tree search."),
-            say("Alpha-beta with a handcrafted evaluation, and the exact solver itself, limited to one second."),
-            say("Then the ones that learn: alpha-beta with a learned evaluation."),
-            say("A convolutional neural network, and that network guiding MCTS."),
-            say("Victor Allis' hand written strategy rules."),
-            say("And safe random: random, but it always takes a win and blocks a loss. Every agent gets one second a move."),
+            say("Step three, the players: eight agents, coloured by family. First, Monte Carlo tree search."),
+            say("Two more pure search agents: handcrafted alpha-beta, and our solver capped at one second."),
+            say("Then learning comes in: alpha-beta with a learned evaluation."),
+            say("A convolutional network on its own, and that same network guiding MCTS."),
+            say("Victor Allis' strategy rules: pure knowledge, no search."),
+            say("And safe random as the baseline. Every agent gets one second per move. Let's meet them one at a time."),
         ],
     },
+    // ---------------------------------------------------------------- the agents, weakest first
+    Slide {
+        kicker: "agent 1 of 8  \u{b7}  baseline",
+        title: "Safe random",
+        visual: spotlight!(16.7, "16.7%", 76.4, "76.4%", 77.8, "77.8%", 54.5, "54.5%"),
+        beats: &[
+            say("Weakest first. Safe random plays at random, except it always takes a winning move and blocks an obvious loss."),
+            show(
+                "+ never misses a one-move win or block",
+                "It's our yardstick, pinned at Elo zero. It still matches the solver on 76 percent of moves, because many positions have several fine moves.",
+            ),
+            show(
+                "\u{2212} no plan beyond the next move",
+                "But it has no plan, so it keeps barely half its won positions against the solver. Every other agent should beat this.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 2 of 8  \u{b7}  knowledge",
+        title: "Allis rules",
+        visual: spotlight!(30.7, "30.7%", 88.3, "88.3%", 89.7, "89.7%", 77.8, "77.8%"),
+        beats: &[
+            say("Allis rules is pure knowledge: win, block, avoid squares that hand over a win, and build threats on the right rows."),
+            show(
+                "+ instant, and the ideas transfer",
+                "It moves instantly, and its accuracy actually rises on 9 by 8, from 88 to 90 percent. Good strategy doesn't care about board size.",
+            ),
+            show(
+                "\u{2212} no lookahead, so tactics catch it",
+                "But with no lookahead it walks into tactics. It keeps only 78 percent of won positions and wins 31 percent of its games.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 3 of 8  \u{b7}  search",
+        title: "Exact solver, 1 s a move",
+        visual: spotlight!(23.4, "23.4%", 97.8, "97.8%", 97.8, "97.8%", 89.4, "89.4%"),
+        beats: &[
+            say("Our exact solver as a player. When it finishes, its move is perfect. Guaranteed."),
+            show(
+                "+ perfect whenever it finishes",
+                "Late in the game it finishes easily, and that's where its 97.8 percent accuracy comes from.",
+            ),
+            show(
+                "\u{2212} one second is nowhere near enough",
+                "The catch: early 9 by 8 positions take far longer than a second, so it's left guessing. It wins only 23 percent of games.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 4 of 8  \u{b7}  search",
+        title: "Alpha-beta, handcrafted",
+        visual: spotlight!(76.0, "76.0%", 98.8, "98.8%", 99.3, "99.3%", 97.0, "97.0%"),
+        beats: &[
+            say("Alpha-beta looks ahead as deep as one second allows, pruning branches that can't matter, and scores the leaves with our evaluation."),
+            show(
+                "+ deep lookahead, sharp tactics",
+                "The evaluation counts threats and rewards them on the right rows, Allis' odd and even rule. That makes it tactically razor sharp.",
+            ),
+            show(
+                "\u{2212} only as good as our hand-picked weights",
+                "Its weakness is us: the weights are our guesses. Still, it wins 76 percent, and from an empty board it often beats MCTS.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 5 of 8  \u{b7}  search + learning",
+        title: "Alpha-beta, learned",
+        visual: spotlight!(78.9, "78.9%", 98.9, "98.9%", 99.3, "99.3%", 97.0, "97.0%"),
+        beats: &[
+            say("Same search, same features, but learned weights: a logistic regression on 107 thousand solver-labelled positions."),
+            show(
+                "+ learned weights beat our guesses",
+                "It predicts results better than our hand tuning, 70 versus 68 percent, and that edge survives the jump to 9 by 8.",
+            ),
+            show(
+                "\u{2212} a linear model can't find new ideas",
+                "The limit: it only reweighs the features we gave it, so it can't discover anything new. Still, second place overall.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 6 of 8  \u{b7}  search",
+        title: "Monte Carlo tree search",
+        visual: spotlight!(80.6, "80.6%", 98.7, "98.7%", 99.1, "99.1%", 96.5, "96.5%"),
+        beats: &[
+            say("MCTS needs no evaluation at all. It plays out thousands of random games and grows its tree toward the moves that win."),
+            show(
+                "+ simple, and better with every second",
+                "It's simple, it scales with time, and it never misses a proven win or loss. At one second, it tops the tournament.",
+            ),
+            show(
+                "\u{2212} random playouts miss long-term strategy",
+                "Its blind spot: random games don't understand row parity, so in quiet positions, like an empty board, alpha-beta can outplay it.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 7 of 8  \u{b7}  learning",
+        title: "Convolutional network",
+        visual: spotlight!(20.1, "20.1%", 92.4, "92.4%", 91.0, "91.0%", 80.3, "80.3%"),
+        beats: &[
+            say("The network looks at the whole board at once and scores every column. No search, just one pass."),
+            show(
+                "+ one set of weights for any board size",
+                "Because it's fully convolutional, the same weights run on 9 by 8, and it still plays the solver's move 91 percent of the time.",
+            ),
+            show(
+                "\u{2212} one bad move and the game is gone",
+                "But 91 percent per move isn't enough. Over a 40 move game a slip is almost certain, so it wins only 20 percent.",
+            ),
+        ],
+    },
+    Slide {
+        kicker: "agent 8 of 8  \u{b7}  search + learning",
+        title: "Network-guided MCTS",
+        visual: spotlight!(72.1, "72.1%", 98.2, "98.2%", 98.5, "98.5%", 96.0, "96.0%"),
+        beats: &[
+            say("Last, the AlphaZero idea: the network tells MCTS which moves look promising and how good a position is."),
+            show(
+                "+ knowledge fixes the network's blunders",
+                "Search on top of knowledge fixes the network's slips: it keeps 96 percent of won positions and climbs to 647 Elo.",
+            ),
+            show(
+                "\u{2212} each network call is slow on a CPU",
+                "The price: each network call costs far more than a random playout, so it searches much less. That's why plain MCTS edges it out.",
+            ),
+        ],
+    },
+    // ---------------------------------------------------------------- what we found
     Slide {
         kicker: "search",
         title: "Alpha-beta: how deep?",
@@ -284,14 +433,14 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("Alpha-beta with a handcrafted evaluation of threats and row parity. At depth 1 it matches the solver 91 percent of the time."),
-            say("Depth 2 gets to about 94."),
-            say("Each extra bit of depth helps a little."),
+            say("Now, what we found. Alpha-beta first: at depth 1 it already agrees with the solver 91 percent of the time."),
+            say("Depth 2, about 94."),
+            say("Depth 4 and 6: slow, steady gains."),
             say("Depth 8 reaches 97.5 percent."),
-            say("Depth 12 barely adds anything, and it looks at 35 times as many nodes."),
+            say("Depth 12 adds almost nothing, while searching 35 times as many nodes. Diminishing returns."),
             show(
                 "deeper still wins 2 of 3 games on 9x8",
-                "But in real games on 9 by 8 the deeper search still wins two out of three, so depth does pay off.",
+                "But don't be fooled: in real 9 by 8 games the deeper search still wins two out of three. Depth matters.",
             ),
         ],
     },
@@ -309,17 +458,17 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("Next we learned the evaluation instead of tuning it by hand. Guessing the most common result gets 56.6 percent."),
-            say("Our hand tuned evaluation gets 67.8."),
+            say("Can we learn the evaluation instead of hand tuning it? Baseline: always guess the most common result, 56.6 percent."),
+            say("Our handcrafted evaluation gets 67.8."),
             show(
                 "on 9x8: Elo 722 learned vs 690 handcrafted",
-                "A logistic regression on the same features, trained on solver labels, gets 70.1, and it holds up on 9 by 8: 722 Elo against 690.",
+                "Logistic regression on the same features, trained on solver labels: 70.1. And it transfers: 722 Elo on 9 by 8, versus 690.",
             ),
         ],
     },
     Slide {
         kicker: "search",
-        title: "Monte Carlo tree search",
+        title: "MCTS loves time",
         visual: Visual::Bars(Bars {
             caption: "9x8 tournament Elo by time per move",
             floor: 600.0,
@@ -332,13 +481,10 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("MCTS needs no evaluation at all. It plays random games to the end, about 740 thousand a second on 9 by 8."),
-            show(
-                "+ proven wins and losses",
-                "It grows its tree toward the moves that win most, and never misses a proven win or loss. At one second it was our strongest agent.",
-            ),
-            say("Give it more time and it keeps improving."),
-            say("Up to 761 Elo at ten seconds a move."),
+            say("Back to MCTS, because it has a superpower: time. At half a second a move, 695 Elo."),
+            say("At one second, 740: top of the tournament, playing about 740 thousand random games a second."),
+            say("At five seconds, 754."),
+            say("At ten, 761. Its win rate keeps climbing with time, while alpha-beta's stays flat or slips."),
         ],
     },
     Slide {
@@ -346,16 +492,16 @@ pub const SLIDES: &[Slide] = &[
         title: "A network for any board",
         visual: Visual::Network,
         beats: &[
-            say("For the neural network we went fully convolutional, so the same weights run on any board size."),
-            say("Six layers of 64 channels, trained for 12 epochs on the CPU after our GPU setup failed."),
-            say("Out comes a score for each column."),
+            say("The network. We made it fully convolutional, so the exact same weights run on any board size."),
+            say("Six layers, 64 channels, trained for 12 epochs on the CPU, after our GPU setup gave up on us."),
+            say("Out come scores, one per column. The highest is its move."),
             show(
                 "92.4% of 8x7 moves  \u{b7}  91% of 9x8 moves",
-                "It plays the solver's move 92.4 percent of the time on 8 by 7, and still 91 percent on 9 by 8.",
+                "It picks the solver's move 92.4 percent of the time on 8 by 7, and 91 on a 9 by 8 board it never trained on.",
             ),
             show(
                 "alone: Elo 37  \u{b7}  guiding MCTS: Elo 647",
-                "But alone, one bad move loses a game. Used to guide MCTS's search, it reaches 647 Elo.",
+                "Alone, though, it scores just 37 Elo, because one slip loses. Let it guide MCTS and it jumps to 647.",
             ),
         ],
     },
@@ -376,11 +522,11 @@ pub const SLIDES: &[Slide] = &[
         beats: &[
             show(
                 "win  \u{b7}  block  \u{b7}  play safe  \u{b7}  claimeven  \u{b7}  threats on good rows",
-                "We also coded part of Victor Allis' strategy rules, with no search. On 9 by 8 they beat safe random 78 percent of the time.",
+                "Allis' rules, with no search at all, beat safe random 78 percent of the time on 9 by 8.",
             ),
-            say("And 83 percent on 8 by 7, so the ideas carry over."),
-            say("Funny enough, turning off claimeven didn't hurt at all."),
-            say("Flipping the parity hurt a little. Our set of rules is just too small for a strong game."),
+            say("83 percent on 8 by 7: same rules, nearly the same strength."),
+            say("Plot twist: turning off claimeven, a famous rule, didn't hurt. It actually scored higher."),
+            say("Flipping the parity hurt a bit. Lesson: a handful of rules isn't a full strategy."),
         ],
     },
     Slide {
@@ -400,10 +546,10 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("So does it carry over? The search agents play almost the same on 9 by 8 as on 8 by 7."),
-            say("The time limited solver stays at 97.8."),
-            say("The network drops only a little, from 92.4 to 91, even on a board it never saw."),
-            say("And the rules and the baseline barely move. What they learned transfers."),
+            say("Now the big question: does it carry over? The search agents play just as well on 9 by 8, even slightly better."),
+            say("The one second solver holds at 97.8."),
+            say("The network slips only from 92.4 to 91, on a board it has never seen."),
+            say("The rules and the baseline barely move. So yes: what they learned transfers."),
         ],
     },
     Slide {
@@ -427,12 +573,12 @@ pub const SLIDES: &[Slide] = &[
         beats: &[
             show(
                 "every pair  \u{b7}  50 openings  \u{b7}  both colours  \u{b7}  2,800 games",
-                "The main result: a 9 by 8 round robin, 2,800 games, with safe random pinned at Elo 0 and the network alone just above.",
+                "The main event: a full round robin on 9 by 8, 2,800 games. Safe random anchors at zero; the network alone sits just above.",
             ),
-            say("The rules, and the time limited solver, come next."),
-            say("Then network guided MCTS, and the handcrafted alpha-beta."),
-            say("The learned alpha-beta at 722."),
-            say("And at the top, MCTS at 740."),
+            say("Allis' rules and the time limited solver come next."),
+            say("Then a big jump: network guided MCTS and handcrafted alpha-beta."),
+            say("Learned alpha-beta takes second, at 722."),
+            say("And the winner: plain MCTS, at 740."),
         ],
     },
     Slide {
@@ -453,11 +599,14 @@ pub const SLIDES: &[Slide] = &[
             ],
         }),
         beats: &[
-            say("So why? Search wins on a board you can't solve. The exact solver is perfect, but only if it finishes."),
-            say("In one second it can't finish a 9 by 8 position, so it falls back to playing near the middle."),
-            say("Learned knowledge transfers, but without search one mistake costs you the game."),
-            say("Put search on top of that knowledge and most of the problem goes away."),
-            show("search + knowledge wins", "This is the same story on 8 by 7, measured against the solver itself."),
+            say("So why did it shake out this way? The solver is perfect, but only when it finishes."),
+            say("In one second it can't finish an early 9 by 8 position, so it's left guessing."),
+            say("Knowledge alone transfers well, but without search a single mistake costs the game."),
+            say("Add search on top of knowledge, and most of those mistakes disappear."),
+            show(
+                "search + knowledge wins",
+                "Same story on 8 by 7, measured against the solver itself: the search agents keep about 97 percent of their wins.",
+            ),
         ],
     },
     Slide {
@@ -467,8 +616,8 @@ pub const SLIDES: &[Slide] = &[
         visual: Visual::Game(&[drop(7, 6, &[3, 3, 2, 2, 1, 1, 0])]),
         beats: &[show(
             "knowledge guides search",
-            "First: on a board you can't solve, search is what wins. Second: what agents learn on 8 by 7 carries \
-             over to 9 by 8 almost unchanged. And third: knowledge is best used to guide search, not to replace it.",
+            "Three takeaways. One: on a board you can't solve, search is what wins. Two: what agents learn on 8 by 7 \
+             carries over to 9 by 8 almost unchanged. Three: knowledge works best guiding search, not replacing it.",
         )],
     },
     Slide {
@@ -476,8 +625,8 @@ pub const SLIDES: &[Slide] = &[
         title: "Now watch them play",
         visual: Visual::Game(&[drop(8, 7, &[3, 4, 3, 3, 4, 2, 5, 5, 2, 4, 1, 6])]),
         beats: &[say(
-            "Alright, let's actually watch them play. I'll pick two agents and a board size. These are the real \
-             agents from our results, playing live, even on the 9 by 8 test board.",
+            "Enough slides, let's watch them play. I'll pick two agents and a board. Heads up: from an empty board, \
+             handcrafted alpha-beta often beats MCTS. Switch Start to Random for the tournament's conditions.",
         )],
     },
 ];

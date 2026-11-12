@@ -1,6 +1,6 @@
 # Speaker notes
 
-About 7 minutes in total (66 presses of Next, most about 6 seconds). The
+About 10 minutes in total (90 presses of Next, most about 6 seconds). The
 slides only show a title and a picture, so everything worth saying is here. Each
 numbered step is one press of Next (right arrow, space or click): it moves the next
 piece of the picture in. The presenter window (press N) shows the current step and
@@ -9,119 +9,167 @@ the next one.
 Generated from `src/slides.rs`: after changing a slide, run
 `C4_WRITE_NOTES=1 cargo test speaker_notes` to rewrite this file.
 
-## 1. Connect Four AI  (12 s, starts at 0:00)
+## 1. Connect Four AI  (18 s, starts at 0:00)
 
-1. Hey everyone, we're TJ and Andrew from group 3. Our project is Connect Four, played by eight different AI agents. We trained them on an 8 by 7 board and tested them on 9 by 8. And everything you'll see today, these slides included, is running live in our Rust code.
+1. Hi everyone, we're TJ and Andrew, group 3. Our project: eight different AI agents playing Connect Four. Here's the twist: we trained them on a board we can solve, 8 by 7, and tested them on one nobody has solved, 9 by 8. Everything you see today, these slides included, runs live in our Rust code.
 
-## 2. A board nobody has solved  (30 s, starts at 0:12)
+## 2. A board nobody has solved  (30 s, starts at 0:18)
 
-1. This is the normal 7 by 6 board. It's solved: with perfect play the first player wins.
-2. Add a column and a row and you get 8 by 7. John Tromp solved it too. This is where we trained.
-3. One more of each and you're at 9 by 8. Nobody has solved it; on our hardware it would take something like 15 years. So our question: if we train agents on a board we can solve, do they still play well on one we can't? And if some methods carry over better than others, why?
+1. Start with the board you know: 7 by 6. It's solved. With perfect play, the first player always wins.
+2. Add a column and a row: 8 by 7. John Tromp solved this one too, so that's where we trained.
+3. One more of each gets you 9 by 8, and that has never been solved. On our hardware it would take roughly 15 years. So here's our question: if agents learn on a board we can solve, do they still play well on one we can't? And if some methods carry over better, why?
 
-## 3. How big is the game?  (24 s, starts at 0:42)
+## 3. How big is the game?  (24 s, starts at 0:48)
 
-1. To give you a feel for the size: 7 by 6 has about 4.5 trillion legal positions.
-2. For 8 by 7 the upper bound is around 10 to the 26.
-3. And 9 by 8 is around 10 to the 34.
-4. This is a log scale, so every step up is millions of times bigger. You just can't brute force that.
+1. How big are we talking? Standard Connect Four has about 4.5 trillion positions. Already a lot.
+2. 8 by 7 jumps to roughly 10 to the 26.
+3. And 9 by 8, roughly 10 to the 34.
+4. Remember, this is a log scale: each step is millions of times bigger. Brute force is simply off the table.
 
-## 4. An exact solver  (24 s, starts at 1:06)
+## 4. An exact solver  (24 s, starts at 1:12)
 
-1. Step one was an exact solver: alpha-beta search on bitboards with a transposition table, like the published solvers.
-2. Give it any position and it says whether each column wins, draws or loses.
-3. These labels were worked out live when the app started. Here, the marked column wins.
-4. We checked it against all 67,557 UCI positions and 6,000 of Pascal Pons' tests. It got every one right.
+1. So step one: build a perfect player anyway. Alpha-beta on bitboards with a transposition table, the same tricks published solvers use.
+2. Hand it any position and it tells you, for every column: win, draw or loss.
+3. These letters were computed live when the app launched. And watch: it plays the winning column.
+4. Can you trust it? We checked all 67,557 UCI positions and 6,000 of Pascal Pons' tests. Zero mistakes.
 
-## 5. Why not just solve 9x8?  (42 s, starts at 1:30)
+## 5. Why not just solve 9x8?  (42 s, starts at 1:36)
 
-1. So why not just solve 9 by 8? Late in the game it's quick, about a tenth of a second.
-2. With fewer stones it slows down: a third of a second at 30.
-3. Two seconds at 26 stones.
-4. At 24 the median is 12 seconds, and the worst one we saw took 31 minutes.
-5. At 20 stones it's over a minute.
-6. And at 16 stones every probe we ran went past ten minutes.
-7. Even 8 by 7 with six stones took over half an hour. That wall is why we needed learning.
+1. So why not just solve 9 by 8? Near the end of a game it's easy: about a tenth of a second.
+2. Take stones away and it slows down: a third of a second at 30.
+3. Two seconds at 26.
+4. At 24 stones the median is 12 seconds, and our worst case took 31 minutes.
+5. At 20 stones, over a minute each.
+6. At 16, every single probe blew past ten minutes.
+7. Even 8 by 7 with only six stones took over half an hour. That wall is exactly why we turned to learning.
 
-## 6. The data  (18 s, starts at 2:12)
+## 6. The data  (18 s, starts at 2:18)
 
-1. We used the solver to build our data: about 107 thousand 8 by 7 positions, every column labelled.
-2. Plus 2,000 harder openings, 10 to 12 stones, just for testing.
-3. And about 10 thousand late game 9 by 8 positions, to test transfer, solved on a 192 core cloud machine.
+1. Instead, the solver became our teacher: about 107 thousand 8 by 7 positions, every column labelled.
+2. Plus 2,000 tricky openings, 10 to 12 stones in, held back just for testing.
+3. And to test transfer, about 10 thousand late game 9 by 8 positions, solved on a 192 core cloud machine.
 
-## 7. Eight agents  (36 s, starts at 2:30)
+## 7. Eight agents  (36 s, starts at 2:36)
 
-1. Then we built eight agents. First, Monte Carlo tree search.
-2. Alpha-beta with a handcrafted evaluation, and the exact solver itself, limited to one second.
-3. Then the ones that learn: alpha-beta with a learned evaluation.
-4. A convolutional neural network, and that network guiding MCTS.
-5. Victor Allis' hand written strategy rules.
-6. And safe random: random, but it always takes a win and blocks a loss. Every agent gets one second a move.
+1. Step three, the players: eight agents, coloured by family. First, Monte Carlo tree search.
+2. Two more pure search agents: handcrafted alpha-beta, and our solver capped at one second.
+3. Then learning comes in: alpha-beta with a learned evaluation.
+4. A convolutional network on its own, and that same network guiding MCTS.
+5. Victor Allis' strategy rules: pure knowledge, no search.
+6. And safe random as the baseline. Every agent gets one second per move. Let's meet them one at a time.
 
-## 8. Alpha-beta: how deep?  (36 s, starts at 3:06)
+## 8. Safe random  (18 s, starts at 3:12)
 
-1. Alpha-beta with a handcrafted evaluation of threats and row parity. At depth 1 it matches the solver 91 percent of the time.
-2. Depth 2 gets to about 94.
-3. Each extra bit of depth helps a little.
+1. Weakest first. Safe random plays at random, except it always takes a winning move and blocks an obvious loss.
+2. It's our yardstick, pinned at Elo zero. It still matches the solver on 76 percent of moves, because many positions have several fine moves.
+3. But it has no plan, so it keeps barely half its won positions against the solver. Every other agent should beat this.
+
+## 9. Allis rules  (18 s, starts at 3:30)
+
+1. Allis rules is pure knowledge: win, block, avoid squares that hand over a win, and build threats on the right rows.
+2. It moves instantly, and its accuracy actually rises on 9 by 8, from 88 to 90 percent. Good strategy doesn't care about board size.
+3. But with no lookahead it walks into tactics. It keeps only 78 percent of won positions and wins 31 percent of its games.
+
+## 10. Exact solver, 1 s a move  (18 s, starts at 3:48)
+
+1. Our exact solver as a player. When it finishes, its move is perfect. Guaranteed.
+2. Late in the game it finishes easily, and that's where its 97.8 percent accuracy comes from.
+3. The catch: early 9 by 8 positions take far longer than a second, so it's left guessing. It wins only 23 percent of games.
+
+## 11. Alpha-beta, handcrafted  (18 s, starts at 4:06)
+
+1. Alpha-beta looks ahead as deep as one second allows, pruning branches that can't matter, and scores the leaves with our evaluation.
+2. The evaluation counts threats and rewards them on the right rows, Allis' odd and even rule. That makes it tactically razor sharp.
+3. Its weakness is us: the weights are our guesses. Still, it wins 76 percent, and from an empty board it often beats MCTS.
+
+## 12. Alpha-beta, learned  (18 s, starts at 4:24)
+
+1. Same search, same features, but learned weights: a logistic regression on 107 thousand solver-labelled positions.
+2. It predicts results better than our hand tuning, 70 versus 68 percent, and that edge survives the jump to 9 by 8.
+3. The limit: it only reweighs the features we gave it, so it can't discover anything new. Still, second place overall.
+
+## 13. Monte Carlo tree search  (18 s, starts at 4:42)
+
+1. MCTS needs no evaluation at all. It plays out thousands of random games and grows its tree toward the moves that win.
+2. It's simple, it scales with time, and it never misses a proven win or loss. At one second, it tops the tournament.
+3. Its blind spot: random games don't understand row parity, so in quiet positions, like an empty board, alpha-beta can outplay it.
+
+## 14. Convolutional network  (18 s, starts at 5:00)
+
+1. The network looks at the whole board at once and scores every column. No search, just one pass.
+2. Because it's fully convolutional, the same weights run on 9 by 8, and it still plays the solver's move 91 percent of the time.
+3. But 91 percent per move isn't enough. Over a 40 move game a slip is almost certain, so it wins only 20 percent.
+
+## 15. Network-guided MCTS  (18 s, starts at 5:18)
+
+1. Last, the AlphaZero idea: the network tells MCTS which moves look promising and how good a position is.
+2. Search on top of knowledge fixes the network's slips: it keeps 96 percent of won positions and climbs to 647 Elo.
+3. The price: each network call costs far more than a random playout, so it searches much less. That's why plain MCTS edges it out.
+
+## 16. Alpha-beta: how deep?  (36 s, starts at 5:36)
+
+1. Now, what we found. Alpha-beta first: at depth 1 it already agrees with the solver 91 percent of the time.
+2. Depth 2, about 94.
+3. Depth 4 and 6: slow, steady gains.
 4. Depth 8 reaches 97.5 percent.
-5. Depth 12 barely adds anything, and it looks at 35 times as many nodes.
-6. But in real games on 9 by 8 the deeper search still wins two out of three, so depth does pay off.
+5. Depth 12 adds almost nothing, while searching 35 times as many nodes. Diminishing returns.
+6. But don't be fooled: in real 9 by 8 games the deeper search still wins two out of three. Depth matters.
 
-## 9. Learning the evaluation  (18 s, starts at 3:42)
+## 17. Learning the evaluation  (18 s, starts at 6:12)
 
-1. Next we learned the evaluation instead of tuning it by hand. Guessing the most common result gets 56.6 percent.
-2. Our hand tuned evaluation gets 67.8.
-3. A logistic regression on the same features, trained on solver labels, gets 70.1, and it holds up on 9 by 8: 722 Elo against 690.
+1. Can we learn the evaluation instead of hand tuning it? Baseline: always guess the most common result, 56.6 percent.
+2. Our handcrafted evaluation gets 67.8.
+3. Logistic regression on the same features, trained on solver labels: 70.1. And it transfers: 722 Elo on 9 by 8, versus 690.
 
-## 10. Monte Carlo tree search  (24 s, starts at 4:00)
+## 18. MCTS loves time  (24 s, starts at 6:30)
 
-1. MCTS needs no evaluation at all. It plays random games to the end, about 740 thousand a second on 9 by 8.
-2. It grows its tree toward the moves that win most, and never misses a proven win or loss. At one second it was our strongest agent.
-3. Give it more time and it keeps improving.
-4. Up to 761 Elo at ten seconds a move.
+1. Back to MCTS, because it has a superpower: time. At half a second a move, 695 Elo.
+2. At one second, 740: top of the tournament, playing about 740 thousand random games a second.
+3. At five seconds, 754.
+4. At ten, 761. Its win rate keeps climbing with time, while alpha-beta's stays flat or slips.
 
-## 11. A network for any board  (30 s, starts at 4:24)
+## 19. A network for any board  (30 s, starts at 6:54)
 
-1. For the neural network we went fully convolutional, so the same weights run on any board size.
-2. Six layers of 64 channels, trained for 12 epochs on the CPU after our GPU setup failed.
-3. Out comes a score for each column.
-4. It plays the solver's move 92.4 percent of the time on 8 by 7, and still 91 percent on 9 by 8.
-5. But alone, one bad move loses a game. Used to guide MCTS's search, it reaches 647 Elo.
+1. The network. We made it fully convolutional, so the exact same weights run on any board size.
+2. Six layers, 64 channels, trained for 12 epochs on the CPU, after our GPU setup gave up on us.
+3. Out come scores, one per column. The highest is its move.
+4. It picks the solver's move 92.4 percent of the time on 8 by 7, and 91 on a 9 by 8 board it never trained on.
+5. Alone, though, it scores just 37 Elo, because one slip loses. Let it guide MCTS and it jumps to 647.
 
-## 12. Victor Allis' strategy  (24 s, starts at 4:54)
+## 20. Victor Allis' strategy  (24 s, starts at 7:24)
 
-1. We also coded part of Victor Allis' strategy rules, with no search. On 9 by 8 they beat safe random 78 percent of the time.
-2. And 83 percent on 8 by 7, so the ideas carry over.
-3. Funny enough, turning off claimeven didn't hurt at all.
-4. Flipping the parity hurt a little. Our set of rules is just too small for a strong game.
+1. Allis' rules, with no search at all, beat safe random 78 percent of the time on 9 by 8.
+2. 83 percent on 8 by 7: same rules, nearly the same strength.
+3. Plot twist: turning off claimeven, a famous rule, didn't hurt. It actually scored higher.
+4. Flipping the parity hurt a bit. Lesson: a handful of rules isn't a full strategy.
 
-## 13. Does it carry over?  (24 s, starts at 5:18)
+## 21. Does it carry over?  (24 s, starts at 7:48)
 
-1. So does it carry over? The search agents play almost the same on 9 by 8 as on 8 by 7.
-2. The time limited solver stays at 97.8.
-3. The network drops only a little, from 92.4 to 91, even on a board it never saw.
-4. And the rules and the baseline barely move. What they learned transfers.
+1. Now the big question: does it carry over? The search agents play just as well on 9 by 8, even slightly better.
+2. The one second solver holds at 97.8.
+3. The network slips only from 92.4 to 91, on a board it has never seen.
+4. The rules and the baseline barely move. So yes: what they learned transfers.
 
-## 14. The 9x8 tournament  (30 s, starts at 5:42)
+## 22. The 9x8 tournament  (30 s, starts at 8:12)
 
-1. The main result: a 9 by 8 round robin, 2,800 games, with safe random pinned at Elo 0 and the network alone just above.
-2. The rules, and the time limited solver, come next.
-3. Then network guided MCTS, and the handcrafted alpha-beta.
-4. The learned alpha-beta at 722.
-5. And at the top, MCTS at 740.
+1. The main event: a full round robin on 9 by 8, 2,800 games. Safe random anchors at zero; the network alone sits just above.
+2. Allis' rules and the time limited solver come next.
+3. Then a big jump: network guided MCTS and handcrafted alpha-beta.
+4. Learned alpha-beta takes second, at 722.
+5. And the winner: plain MCTS, at 740.
 
-## 15. Why it came out this way  (30 s, starts at 6:12)
+## 23. Why it came out this way  (30 s, starts at 8:42)
 
-1. So why? Search wins on a board you can't solve. The exact solver is perfect, but only if it finishes.
-2. In one second it can't finish a 9 by 8 position, so it falls back to playing near the middle.
-3. Learned knowledge transfers, but without search one mistake costs you the game.
-4. Put search on top of that knowledge and most of the problem goes away.
-5. This is the same story on 8 by 7, measured against the solver itself.
+1. So why did it shake out this way? The solver is perfect, but only when it finishes.
+2. In one second it can't finish an early 9 by 8 position, so it's left guessing.
+3. Knowledge alone transfers well, but without search a single mistake costs the game.
+4. Add search on top of knowledge, and most of those mistakes disappear.
+5. Same story on 8 by 7, measured against the solver itself: the search agents keep about 97 percent of their wins.
 
-## 16. What we learned  (12 s, starts at 6:42)
+## 24. What we learned  (12 s, starts at 9:12)
 
-1. First: on a board you can't solve, search is what wins. Second: what agents learn on 8 by 7 carries over to 9 by 8 almost unchanged. And third: knowledge is best used to guide search, not to replace it.
+1. Three takeaways. One: on a board you can't solve, search is what wins. Two: what agents learn on 8 by 7 carries over to 9 by 8 almost unchanged. Three: knowledge works best guiding search, not replacing it.
 
-## 17. Now watch them play  (12 s, starts at 6:54)
+## 25. Now watch them play  (12 s, starts at 9:24)
 
-1. Alright, let's actually watch them play. I'll pick two agents and a board size. These are the real agents from our results, playing live, even on the 9 by 8 test board.
+1. Enough slides, let's watch them play. I'll pick two agents and a board. Heads up: from an empty board, handcrafted alpha-beta often beats MCTS. Switch Start to Random for the tournament's conditions.

@@ -53,25 +53,24 @@ disagrees, and later requests win over earlier ones.
     incorporate it better."
 18. "Remove the progress bar from the bottom of the slides"
 19. "Pressing r should also reset the speaker notes timer"
+20. "Okay, add an option to have like at the bottom either empty board or start from
+    random beginning (like the tournament did). Also, have a settings menu to enable or
+    disbable having the second red color be an accent."
+21. "'stopped coult not find random opening' shouldn't happen haha. Please fix that"
+22. "Also, in the bottom toolbar remove the random vertical line"
+23. "Remove the settings thing and remove red as a second accent color entirely. Go back
+    to how it was just #ff922f as the accent before adn remove the setting to enable the
+    gradient."
+24. "Also, improve the presenter notes content to make it a bit smarter and more
+    presenter'ey also include a slide about each specific algorithm and a bump about
+    like why its good or bad or just some info about it"
 
 What they mean in practice:
 
-- Look: quiz-catch's Liquid Glass in its light theme, Inter type. The two accent
-  colours are orange `#ff922f` (the main accent) and deep red `#b61b0d` (accent text
-  on cream, where orange is too light to read). The discs keep their own red
-  (`#e04a2f`) and yellow.
-- **The ember gradient** (`theme::heat`, `theme::EMBER`): the two accents are one
-  gradient, orange burning to deep red, used throughout:
-  - **The talk heats up:** each slide's accent is `heat` of how far into the talk it
-    is, so the first half reads orange and the results half deep red. It colours the
-    kicker, captions, highlighted values, the page dots, the network's best column
-    and its search tree's best line (`present::slide_heat`).
-  - **Ember pieces:** the rule under every slide title is the whole gradient, and
-    every highlighted bar burns from orange at its root to the slide's red at its tip
-    (vertex colours on an unlit material, `present::ember_mesh`).
-  - **Arena:** the Play button's face burns from orange to red along it, over a warm
-    orange and red glow; the divider in the control bar is a gradient hairline; win
-    confetti includes the red.
+- Look: quiz-catch's Liquid Glass in its light theme, Inter type, `#ff922f` as the
+  one accent (with `#b4530a` when orange is text on cream). No second accent colour
+  and no accent gradients (requests 15 to 17 were undone by request 23). The discs
+  keep their own red (`#e04a2f`) and yellow.
 - Arena: both agent pickers always visible; no brand, no algorithm explanations, no
   "moves first/second" headers, no thinking bar, no Step, no starting-position
   option (every match starts empty). Left-drag rotates the camera, right-drag pans.
@@ -159,8 +158,21 @@ is different each time.
   (`SPEAKER_NOTES.md` and the presenter window). The visual is large and centred
   under the title: boards with dropping discs, growing bar charts, agent tiles, and a
   layer-stack picture of the network.
-- **About six seconds a click, and every click moves something:** 17 slides, 66
-  beats, about 7 minutes (`slides::talk_seconds`: six seconds for every 26 spoken
+- **The talk:** title, the question, scale, the solver, the wall, the data, the eight
+  agents, then **one slide per agent** (weakest first: safe random, Allis rules, the
+  1 s solver, handcrafted alpha-beta, learned alpha-beta, MCTS, the network,
+  network-guided MCTS), then what we found (depth, learned evaluation, MCTS and time,
+  the network, Allis' rules, transfer, the tournament, why), takeaways and the demo.
+  - **Agent slides** (`spotlight!` in `src/slides.rs`): the kicker says "agent n of 8"
+    and its family; the visual is the same four bars for every agent, so they compare
+    at a glance: 9x8 games won, 8x7 and 9x8 late-game move accuracy, and 8x7 wins
+    kept against the solver. Three presses: how it works; "+" a strength; "−" a
+    weakness (each as a caption, the detail in the notes).
+- **Notes written to be spoken:** each beat opens with a hook or a transition, ties
+  the number on screen to what it means, and the agent slides say why each one is
+  good or bad.
+- **About six seconds a click, and every click moves something:** 25 slides, 90
+  beats, about 10 minutes (`slides::talk_seconds`: six seconds for every 26 spoken
   words). Each press of Next brings something visual: a bar grows, a bar lights up
   (orange sweeps along it and its value turns orange, `Bar::lit`), the board grows, an
   agent tile or a network layer arrives, the network's move is played, a search tree
@@ -293,15 +305,21 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
   sheen of light under its top edge, a hairline and a soft warm shadow. Capsules for
   buttons, concentric rounded panes (24 to 28 px) for everything else. Colours are
   quiz-catch's light palette: cream wallpaper `#f7f3e8`, surface `#fffdf7`, ink
-  `#282820`, muted `#5f5b49`, faint `#8f8a75`, and the two accents, orange
-  `#ff922f` and deep red `#b61b0d` (accent text on cream). Type is Inter (what quiz-catch shows where SF is missing) on the
+  `#282820`, muted `#5f5b49`, faint `#8f8a75`, orange `#ff922f` (and `#b4530a` when
+  orange is text on cream). Type is Inter (what quiz-catch shows where SF is missing) on the
   system scale, tracked tighter as it grows.
 - **Only what matters now is on screen.** Always there: the score capsule naming
   both agents, `? / Slides`, an agent picker down each side, and the control bar
   along the bottom.
-  - **Control bar** (always visible): Play, Reset, then a stepper each for Board,
-    Per move and Boards (minus, a small caption over the value, plus, in a faint
-    capsule).
+  - **Control bar** (always visible): Play, Reset, then Start (Empty or Random, one
+    click switches it, `O`), then a stepper each for Board, Per move and Boards
+    (minus, a small caption over the value, plus, in a faint capsule).
+  - **Start:** Empty starts every match from an empty board. Random starts it from a
+    random opening of 4 to 8 stones (at most a quarter of the board; no immediate
+    wins, `c4::dataset::sample`, drawn again when a draw runs into a dead end), like the tournament's random openings. Switching it
+    restarts the match (the score is kept). From an empty board the handcrafted
+    alpha-beta usually beats MCTS; from random openings MCTS wins about half, as in the
+    tournament.
   - **Agent pickers** (always visible): the eight agents as rows (names only); a
     pill flows to the chosen one, whose name turns its side's colour. Under them,
     three tiles (Elo, 8x7 and 9x8 accuracy), with no family label. No explanations of
@@ -349,8 +367,8 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
  | ...             |                 3D board(s)                      | ...             |
  | [740][98.7][99] |        .------------------------------.          | [722][98.9][99] |
  '-----------------'                                                  '-----------------'
-                                       BOARD          PER MOVE       BOARDS
-              ( [ Play ]  Reset  |  ( -  9 x 8  + ) ( -  1 s  + ) ( -  1  + ) )  <- control bar
+                                START    BOARD          PER MOVE       BOARDS
+              ( [ Play ]  Reset  Empty  ( -  9 x 8  + ) ( -  1 s  + ) ( -  1  + ) )  <- control bar
 ```
 
 ### Series and score
@@ -389,6 +407,7 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
 | `+` / `-`         | Grow / shrink the board   |
 | `[` / `]`         | Less / more time per move |
 | `,` / `.`         | Fewer / more boards       |
+| O                 | Empty or random start     |
 | P                 | Slides                    |
 | H or ?            | Shortcut list             |
 | Esc               | Put the panes away        |

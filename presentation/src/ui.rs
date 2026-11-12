@@ -31,7 +31,7 @@ use crate::roster::ROSTER;
 use crate::scene::UiMargins;
 use crate::sizes::LADDER;
 use crate::theme::{
-    ACCENT, ACCENT_INK, EMBER, FAINT, FILL, FILL_2, GLASS, HI_A, HI_B, HI_C, MUTED, ON_ACCENT, PILL, RED, RED_INK, SEP, SHADOW, TEXT,
+    ACCENT, ACCENT_INK, FAINT, FILL, FILL_2, GLASS, HI_A, HI_B, HI_C, MUTED, ON_ACCENT, PILL, RED, RED_INK, SEP, SHADOW, TEXT,
     THICK, YELLOW, YELLOW_INK, bold_font, ink, medium_font, title_font, ui_font, white,
 };
 
@@ -151,6 +151,7 @@ enum Value {
     Play,
     Note,
     Toast,
+    Opening,
     Agent(Player),
 }
 
@@ -722,12 +723,13 @@ fn picker(root: &mut ChildSpawnerCommands<'_>, player: Player) {
 
 /// The shortcut list, over the control bar.
 fn help(column: &mut ChildSpawnerCommands<'_>) {
-    const KEYS: [(&str, &str); 10] = [
+    const KEYS: [(&str, &str); 11] = [
         ("Space", "Play or pause"),
         ("R", "Reset"),
         ("\u{2212}  +", "Board size"),
         ("[  ]", "Time per move"),
         (",  .", "Boards at once"),
+        ("O", "Empty or random start"),
         ("P", "Slides"),
         ("F11", "Full screen"),
         ("Esc", "Close this list"),
@@ -833,12 +835,8 @@ fn bottom(root: &mut ChildSpawnerCommands<'_>) {
                 bar.spawn((
                     pressable(Look::Primary, 48.0, Action::PlayPause),
                     rim(),
-                    ember_sheen(),
-                    // A warm glow under it, orange running to red.
-                    BoxShadow(vec![
-                        shadow(ACCENT.with_alpha(0.45), 8.0, -8.0, 22.0),
-                        shadow(EMBER.with_alpha(0.22), 12.0, -14.0, 30.0),
-                    ]),
+                    sheen(26.0, 0.32),
+                    BoxShadow(vec![shadow(ACCENT.with_alpha(0.5), 8.0, -8.0, 22.0)]),
                     children![(text("", bold_font(), 16.0, ON_ACCENT), Value::Play, Pickable::IGNORE)],
                 ))
                 .insert(Node {
@@ -850,7 +848,7 @@ fn bottom(root: &mut ChildSpawnerCommands<'_>) {
                     InBar,
                     children![(text("Reset", medium_font(), 15.0, TEXT), Pickable::IGNORE)],
                 ));
-                bar_rule(bar);
+                choice(bar, "START", Action::Opening, Value::Opening, 70.0);
                 stepper(bar, "BOARD", (Action::Shrink, Value::Size, Action::Grow), 76.0);
                 stepper(bar, "PER MOVE", (Action::Faster, Value::Time, Action::Slower), 70.0);
                 stepper(bar, "BOARDS", (Action::FewerBoards, Value::Boards, Action::MoreBoards), 58.0);
@@ -858,44 +856,28 @@ fn bottom(root: &mut ChildSpawnerCommands<'_>) {
     });
 }
 
-/// The divider in the bar: a hairline of the ember gradient, fading out at both ends.
-fn bar_rule(bar: &mut ChildSpawnerCommands<'_>) {
-    bar.spawn((
-        Node {
-            width: px(2),
-            height: px(28),
-            margin: UiRect::horizontal(px(4)),
-            border_radius: BorderRadius::MAX,
-            ..default()
-        },
-        BackgroundGradient::from(LinearGradient::new(
-            LinearGradient::TO_BOTTOM,
-            vec![
-                ColorStop::new(ACCENT.with_alpha(0.0), percent(0)),
-                ColorStop::new(ACCENT.with_alpha(0.85), percent(30)),
-                ColorStop::new(EMBER.with_alpha(0.85), percent(70)),
-                ColorStop::new(EMBER.with_alpha(0.0), percent(100)),
-            ],
-        )),
-        Pickable::IGNORE,
-    ));
-}
-
-/// The Play button's face: orange (its fill) burning to deep red along it, with the
-/// usual light under the top edge.
-fn ember_sheen() -> BackgroundGradient {
-    BackgroundGradient(vec![
-        LinearGradient::new(
-            LinearGradient::TO_RIGHT,
-            vec![ColorStop::new(EMBER.with_alpha(0.0), percent(25)), ColorStop::new(EMBER.with_alpha(0.8), percent(100))],
-        )
-        .into(),
-        LinearGradient::new(
-            LinearGradient::TO_BOTTOM,
-            vec![ColorStop::new(white(0.32), px(0)), ColorStop::new(white(0.0), px(26))],
-        )
-        .into(),
-    ])
+/// A small caption over a value, the whole capsule one button that switches it.
+fn choice(bar: &mut ChildSpawnerCommands<'_>, caption: &str, action: Action, value: Value, width: f32) {
+    bar.spawn((pressable(Look::Ghost, 48.0, action), InBar))
+        .insert(Node {
+            min_width: px(width + 28.0),
+            flex_direction: FlexDirection::Column,
+            ..button_node(Look::Ghost, 48.0)
+        })
+        .with_children(|slot| {
+            slot.spawn((
+                Text::new(caption),
+                TextFont {
+                    font: bold_font(),
+                    font_size: FontSize::Px(9.5),
+                    ..default()
+                },
+                TextColor(FAINT),
+                LetterSpacing::Px(0.9),
+                Pickable::IGNORE,
+            ));
+            slot.spawn((text("", bold_font(), 16.0, TEXT), value, Pop::new(TEXT, 0.18), Pickable::IGNORE));
+        });
 }
 
 /// Minus, a small caption over the value, plus.
@@ -1118,6 +1100,7 @@ fn update_values(readout: Res<Readout>, settings: Res<Settings>, mut texts: Quer
             Value::Play => readout.play.clone(),
             Value::Note => readout.note.clone(),
             Value::Toast => readout.toast.clone(),
+            Value::Opening => if settings.random_opening { "Random" } else { "Empty" }.to_owned(),
             Value::Agent(player) => ROSTER[settings.agent[player.seat()]].title.to_owned(),
         };
         if set(&mut text, &wanted)

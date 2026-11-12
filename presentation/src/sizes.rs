@@ -86,8 +86,11 @@ fn start<G: Geometry + 'static>(
     let (board, opening) = if opening_stones == 0 {
         (Board::<G>::default(), Vec::new())
     } else {
+        // A draw can run into a dead end (every column would hand the opponent a
+        // win); like the tournament's sampler, just draw again.
         let mut rng = SplitMix::new(seed);
-        let found = sample::<G>(&mut rng, opening_stones)
+        let found = (0..10_000)
+            .find_map(|_| sample::<G>(&mut rng, opening_stones))
             .ok_or_else(|| "could not find a random opening".to_owned())?;
         (found.board, found.columns)
     };
@@ -131,6 +134,21 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    /// Random openings always come out, on every board, for every stone count used.
+    #[test]
+    fn random_openings_always_found() {
+        for size in LADDER {
+            let cells = usize::try_from(size.columns * size.rows).unwrap_or(0);
+            for stones in 2..=8_usize.min(cells / 4).max(2) {
+                for seed in 0..300 {
+                    let started = start_match(size, Entrant::SafeRandom, Entrant::SafeRandom, seed, stones)
+                        .unwrap_or_else(|err| panic!("{size:?}, {stones} stones, seed {seed}: {err}"));
+                    assert_eq!(started.opening.len(), stones);
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_ladder_size_plays_to_the_end() {

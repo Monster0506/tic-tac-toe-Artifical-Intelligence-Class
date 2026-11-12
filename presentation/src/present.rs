@@ -22,7 +22,7 @@ use crate::roster::ROSTER;
 use crate::scene::{SceneAssets, Shape, board_parts, board_top, cell_x, cell_y, morph_shaped_board, spawn_shaped_board};
 use crate::sizes::BoardSize;
 use crate::slides::{Bars, SLIDES, Slide, Stage, Visual, solve_position, solved_columns};
-use crate::theme::{ACCENT, AQUA, BOARD, EMBER, FAINT, GREEN, MUTED, RAISED, RED, TEXT, YELLOW, bold_font, heat, title_font, ui_font};
+use crate::theme::{ACCENT, AQUA, BOARD, FAINT, GREEN, MUTED, RAISED, RED, TEXT, YELLOW, bold_font, title_font, ui_font};
 
 /// Where the slides are built, well away from the arena table.
 pub const STAGE: Vec3 = Vec3::new(0.0, 0.0, -140.0);
@@ -106,10 +106,7 @@ impl Deck {
 
 #[derive(Resource)]
 struct Palette {
-    /// The slide's accent: orange early in the talk, warming to deep red by the end.
     accent: Handle<StandardMaterial>,
-    /// White and unlit: shows a mesh's own vertex colours (the ember gradient) exactly.
-    ember: Handle<StandardMaterial>,
 
     bar: Handle<StandardMaterial>,
     good: Handle<StandardMaterial>,
@@ -351,16 +348,10 @@ fn material(materials: &mut Assets<StandardMaterial>, colour: Color, glow: f32) 
 }
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
-    let ember = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        unlit: true,
-        ..default()
-    });
     let mut make = |colour: Color, glow: f32| material(&mut materials, colour, glow);
     let palette = Palette {
         // Little glow, so the orange reads as the palette's #ff922f on the cream stage.
         accent: make(ACCENT, 0.12),
-        ember,
         bar: make(MUTED.mix(&RAISED, 0.55), 0.1),
         good: make(GREEN, 0.1),
         tile: make(RAISED, 0.05),
@@ -450,8 +441,6 @@ struct Builder<'a, 'w, 's> {
     assets: &'a SceneAssets,
     /// Which side new pieces sweep in from.
     side: f32,
-    /// This slide's accent: `heat` of how far into the talk it is.
-    accent: Color,
     /// The beats being built this time (all of them up to `to` on a fresh slide, just
     /// the new ones when stepping).
     from: usize,
@@ -629,7 +618,6 @@ fn build_slide(
     mut deck: ResMut<Deck>,
     mut kick: ResMut<Kick>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     palette: Res<Palette>,
     assets: Res<SceneAssets>,
     old: Query<(Entity, &Transform, Option<&Until>, Option<&Step>), (With<SlideItem>, Without<Leaving>)>,
@@ -678,13 +666,6 @@ fn build_slide(
         }
     }
     let slide = &SLIDES[deck.index];
-    // The talk heats up: the accent runs from orange on the first slide to deep red on
-    // the last. The shared accent material follows the slide being built.
-    let accent = slide_heat(deck.index);
-    if let Some(mut material) = materials.get_mut(&palette.accent) {
-        material.base_color = accent;
-        material.emissive = accent.to_linear() * 0.12;
-    }
     let solved = deck.solved.lock().ok().and_then(|slot| slot.clone());
     deck.waiting_for_solve = matches!(slide.visual, Visual::Solved) && solved.is_none();
     let mut builder = Builder {
@@ -693,7 +674,6 @@ fn build_slide(
         palette: &palette,
         assets: &assets,
         side: deck.direction,
-        accent,
         from,
         to,
         beat: 0,
@@ -716,13 +696,11 @@ fn build_slide(
 /// The words on every slide: a small kicker, the title, a rule and the page number.
 /// Everything else is said aloud (see the speaker notes).
 fn frame(builder: &mut Builder<'_, '_, '_>, slide: &Slide, index: usize) {
+    let accent = builder.palette.accent.clone();
     let title_y = 6.4;
-    let ink = builder.accent;
-    builder.text(&Spec::new(slide.kicker, Face::Bold, 0.5).align(Align::Center), ink, Vec2::new(0.0, 8.3), 0.0);
+    builder.text(&Spec::new(slide.kicker, Face::Bold, 0.5).align(Align::Center), ACCENT, Vec2::new(0.0, 8.3), 0.0);
     builder.text(&Spec::new(slide.title, Face::Serif, 1.45).align(Align::Center).fit(32.0), TEXT, Vec2::new(0.0, title_y), 0.05);
-    // The rule under the title: the whole ember gradient, orange to deep red.
-    let ember = builder.palette.ember.clone();
-    builder.block(ember_mesh(Vec3::new(3.6, 0.08, 0.08), ACCENT, EMBER), &ember, Vec3::new(0.0, title_y - 0.75, 0.0), 0.15);
+    builder.block(Cuboid::new(3.0, 0.07, 0.07).into(), &accent, Vec3::new(0.0, title_y - 0.75, 0.0), 0.15);
     let page = format!("{} / {}", index + 1, SLIDES.len());
     builder.text(&Spec::new(&page, Face::Sans, 0.4).align(Align::Right), FAINT, Vec2::new(16.8, -9.1), 0.3);
     // One dot per beat over the page number; they fill in as the slide steps on.
@@ -743,7 +721,7 @@ fn frame(builder: &mut Builder<'_, '_, '_>, slide: &Slide, index: usize) {
         builder.beat = step;
         builder.until = Some(step);
         let delay = builder.soon(0.7, 0.25);
-        builder.text(&Spec::new(beat.caption, Face::Bold, 0.62).align(Align::Center).fit(30.0), ink, Vec2::new(0.0, -8.9), delay);
+        builder.text(&Spec::new(beat.caption, Face::Bold, 0.62).align(Align::Center).fit(30.0), ACCENT, Vec2::new(0.0, -8.9), delay);
     }
 }
 
@@ -838,7 +816,7 @@ fn expand(builder: &mut Builder<'_, '_, '_>, stages: &'static [Stage], layout: L
         builder.beat = step;
         builder.until = (step < last).then_some(step);
         let delay = builder.soon(0.45, 1.0);
-        let ink = if step == last || stage.columns == 9 { builder.accent } else { TEXT };
+        let ink = if step == last || stage.columns == 9 { ACCENT } else { TEXT };
         builder.text(&Spec::new(stage.name, Face::Serif, 2.6), ink, Vec2::new(x, 0.9), delay);
         for (line, text) in stage.note.lines().enumerate() {
             let y = -0.6 - f32_of(u32::try_from(line).unwrap_or(0)) * 0.95;
@@ -971,7 +949,7 @@ fn place_stage_discs(roots: Query<&Shape, With<Growing>>, mut discs: Query<(&Sta
 }
 
 fn bar_chart(builder: &mut Builder<'_, '_, '_>, bars: &Bars) {
-    let plain = builder.palette.bar.clone();
+    let (accent, plain) = (builder.palette.accent.clone(), builder.palette.bar.clone());
     let label_right = -5.0;
     let start = -4.4;
     let full = 15.5;
@@ -997,13 +975,13 @@ fn bar_chart(builder: &mut Builder<'_, '_, '_>, bars: &Bars) {
         let value_at = Vec2::new(start + length + 0.35, text_y);
         if builder.shows() {
             builder.text(&Spec::new(item.label, Face::Sans, label_size).align(Align::Right).fit(10.5), MUTED, Vec2::new(label_right, text_y), delay);
-            let fill = if lit_now { None } else { Some(plain.clone()) };
+            let fill = if lit_now { accent.clone() } else { plain.clone() };
             spawn_bar(builder, fill, Vec3::new(start, y, 0.0), Vec3::new(1.0, thickness, 0.6), length, delay);
         }
         // The value: orange if the bar is lit; a bar lit later shows it in plain ink
         // until then, when it swaps for an orange one.
         builder.until = later.map(|lit| lit - 1);
-        let ink = if lit_now { builder.accent } else { TEXT };
+        let ink = if lit_now { ACCENT } else { TEXT };
         builder.text(&Spec::new(item.text, Face::Bold, label_size), ink, value_at, delay + 0.45);
         builder.until = None;
         // Lighting a bar up later: orange sweeps along it, a touch proud of the grey.
@@ -1011,22 +989,17 @@ fn bar_chart(builder: &mut Builder<'_, '_, '_>, bars: &Bars) {
             builder.beat = lit;
             if builder.shows() {
                 let sweep = builder.soon(0.9, 0.15);
-                spawn_bar(builder, None, Vec3::new(start, y, 0.0), Vec3::new(1.0, thickness * 1.1, 0.66), length, sweep);
-                builder.text(&Spec::new(item.text, Face::Bold, label_size), builder.accent, value_at, sweep + 0.5);
+                spawn_bar(builder, accent.clone(), Vec3::new(start, y, 0.0), Vec3::new(1.0, thickness * 1.1, 0.66), length, sweep);
+                builder.text(&Spec::new(item.text, Face::Bold, label_size), ACCENT, value_at, sweep + 0.5);
             }
         }
         y -= spacing;
     }
 }
 
-/// A bar that grows from `at` along x to `length`: in `fill`, or with `None` lit up in
-/// the ember gradient (orange at its root, the slide's red at its tip).
-fn spawn_bar(builder: &mut Builder<'_, '_, '_>, fill: Option<Handle<StandardMaterial>>, at: Vec3, size: Vec3, length: f32, delay: f32) {
-    let (mesh, fill) = match fill {
-        Some(fill) => (Mesh::from(Cuboid::new(size.x, size.y, size.z)), fill),
-        None => (ember_mesh(size, ACCENT, builder.accent.mix(&EMBER, 0.5)), builder.palette.ember.clone()),
-    };
-    let mesh = builder.meshes.add(mesh);
+/// A bar that grows from `at` along x to `length`.
+fn spawn_bar(builder: &mut Builder<'_, '_, '_>, fill: Handle<StandardMaterial>, at: Vec3, size: Vec3, length: f32, delay: f32) {
+    let mesh = builder.meshes.add(Cuboid::new(size.x, size.y, size.z));
     builder.commands.spawn((
         SlideItem,
         Step(builder.beat),
@@ -1211,7 +1184,7 @@ fn solved_board(builder: &mut Builder<'_, '_, '_>, columns: Option<Vec<Option<Ou
         let y = 0.6 - f32_of(u32::try_from(row).unwrap_or(0)) * 3.2;
         if builder.shows() {
             builder.text(&Spec::new(label, Face::Sans, 0.55), MUTED, Vec2::new(2.0, y + 0.95), delay);
-            spawn_bar(builder, Some(good.clone()), Vec3::new(2.0, y, 0.0), Vec3::new(1.0, 1.0, 0.6), 11.5, delay);
+            spawn_bar(builder, good.clone(), Vec3::new(2.0, y, 0.0), Vec3::new(1.0, 1.0, 0.6), 11.5, delay);
             builder.text(&Spec::new("100%", Face::Bold, 0.6), GREEN, Vec2::new(13.85, y - 0.22), delay + 0.9);
         }
     }
@@ -1245,27 +1218,6 @@ fn solved_board(builder: &mut Builder<'_, '_, '_>, columns: Option<Vec<Option<Ou
             builder.text(&Spec::new("solving...", Face::Sans, 0.55).align(Align::Center), FAINT, Vec2::new(base.x, label_y), 0.5);
         }
     }
-}
-
-/// How far into the talk a slide is, as the ember gradient: orange first, deep red last.
-fn slide_heat(index: usize) -> Color {
-    let last = SLIDES.len().saturating_sub(1).max(1);
-    heat(f32_of(u32::try_from(index).unwrap_or(0)) / f32_of(u32::try_from(last).unwrap_or(1)))
-}
-
-/// A box whose vertex colours run from `from` at its left end to `to` at its right;
-/// shown with the unlit `Palette::ember` material, it is a gradient.
-fn ember_mesh(size: Vec3, from: Color, to: Color) -> Mesh {
-    let mut mesh = Mesh::from(Cuboid::new(size.x, size.y, size.z));
-    let colours: Vec<[f32; 4]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
-        Some(bevy::mesh::VertexAttributeValues::Float32x3(positions)) => positions
-            .iter()
-            .map(|position| from.mix(&to, (position[0] / size.x + 0.5).clamp(0.0, 1.0)).to_linear().to_f32_array())
-            .collect(),
-        _ => Vec::new(),
-    };
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
-    mesh
 }
 
 fn f32_of(value: u32) -> f32 {
