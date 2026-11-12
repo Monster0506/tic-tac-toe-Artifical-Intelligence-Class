@@ -8,11 +8,8 @@ use bevy::prelude::*;
 use bevy::window::{WindowRef, WindowResolution};
 
 use crate::present::{Deck, Mode};
-use crate::slides::SLIDES;
-use crate::theme::{ACCENT, BG, FAINT, MUTED, RED, TEXT, ui_font};
-
-/// The talk is planned for this long.
-const TALK_SECONDS: f32 = 600.0;
+use crate::slides::{SLIDES, talk_seconds};
+use crate::theme::{ACCENT_INK, BG, FAINT, MUTED, RED_INK, TEXT, ui_font};
 
 #[derive(Resource, Default)]
 struct Presenter {
@@ -114,7 +111,7 @@ fn toggle(mut commands: Commands, keys: Res<ButtonInput<KeyCode>>, mut presenter
                 ..default()
             })
             .with_children(|top| {
-                top.spawn((text("", 22.0, ACCENT), Readout::Slide));
+                top.spawn((text("", 22.0, ACCENT_INK), Readout::Slide));
                 top.spawn((text("", 30.0, TEXT), Readout::Clock));
             });
             root.spawn((text("", 18.0, MUTED), Readout::SlideClock));
@@ -126,8 +123,15 @@ fn toggle(mut commands: Commands, keys: Res<ButtonInput<KeyCode>>, mut presenter
     presenter.parts = vec![camera, root];
 }
 
-/// Restarts the slide timer whenever the slide changes.
-fn track_slide(time: Res<Time>, deck: Res<Deck>, mut presenter: ResMut<Presenter>) {
+/// Restarts the slide timer whenever the slide changes. R (back to the first slide)
+/// restarts the talk clock too.
+fn track_slide(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, deck: Res<Deck>, mut presenter: ResMut<Presenter>) {
+    if keys.just_pressed(KeyCode::KeyR) {
+        let now = time.elapsed_secs();
+        presenter.started = Some(now);
+        presenter.slide_started = now;
+        presenter.slide = 0;
+    }
     if presenter.slide != deck.index {
         presenter.slide = deck.index;
         presenter.slide_started = time.elapsed_secs();
@@ -154,8 +158,8 @@ fn update(
     let on_slide = now - presenter.slide_started;
     let total = presenter.started.map_or(0.0, |started| now - started);
     // Where the talk should be by the start of this slide.
-    let planned: u32 = SLIDES[..deck.index].iter().map(|slide| slide.seconds).sum();
-    let budget = f32::from(u16::try_from(slide.seconds).unwrap_or(u16::MAX));
+    let planned: u32 = SLIDES[..deck.index].iter().map(|slide| slide.seconds()).sum();
+    let budget = f32::from(u16::try_from(slide.seconds()).unwrap_or(u16::MAX));
     for (readout, mut text, mut colour) in &mut texts {
         let (value, tint) = match readout {
             Readout::Slide => (
@@ -167,11 +171,12 @@ fn update(
                     deck.beat + 1,
                     slide.beats.len()
                 ),
-                ACCENT,
+                ACCENT_INK,
             ),
             Readout::Clock => {
-                let late = total > TALK_SECONDS;
-                (format!("{} / {}", clock(total), clock(TALK_SECONDS)), if late { RED } else { TEXT })
+                let talk = f32::from(u16::try_from(talk_seconds()).unwrap_or(u16::MAX));
+                let late = total > talk;
+                (format!("{} / {}", clock(total), clock(talk)), if late { RED_INK } else { TEXT })
             }
             Readout::SlideClock => {
                 let over = on_slide > budget;
@@ -179,7 +184,7 @@ fn update(
                 let pace = if ahead >= 0.0 { format!("{} ahead of plan", clock(ahead)) } else { format!("{} behind plan", clock(-ahead)) };
                 (
                     format!("this slide {} of {}    \u{b7}    {pace}", clock(on_slide), clock(budget)),
-                    if over { RED } else { MUTED },
+                    if over { RED_INK } else { MUTED },
                 )
             }
             Readout::Notes => (

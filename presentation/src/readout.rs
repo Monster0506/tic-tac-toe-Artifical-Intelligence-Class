@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use crate::game::{Game, GameFlow, OPENINGS, Outcome, Phase, Player, Series, Settings};
+use crate::game::{Game, GameFlow, Outcome, Phase, Player, Series, Settings};
 use crate::roster::ROSTER;
 use crate::sizes::LADDER;
 
@@ -24,7 +24,6 @@ pub struct Readout {
     pub time: String,
     pub boards: String,
     pub play: String,
-    pub opening: String,
     pub status: String,
     pub moves: String,
     pub banner: String,
@@ -32,6 +31,8 @@ pub struct Readout {
     pub banner_result: bool,
     pub score: [u32; 2],
     pub note: String,
+    /// A result or an error worth a toast; empty when there is nothing to say.
+    pub toast: String,
     /// How much of the current think time has passed (0 when not thinking).
     pub think: f32,
     pub to_move: Player,
@@ -103,7 +104,7 @@ fn compute(time: Res<Time>, settings: Res<Settings>, series: Res<Series>, games:
     let r = readout.bypass_change_detection();
     let size = LADDER[settings.size];
     let mut changed = false;
-    changed |= put(&mut r.size, format!("{} \u{d7} {}   \u{b7}   {}", size.columns, size.rows, size.label));
+    changed |= put(&mut r.size, format!("{} \u{d7} {}  {}", size.columns, size.rows, size.label));
     changed |= put(&mut r.time, time_label(settings.per_move()));
     changed |= put(&mut r.boards, settings.boards.to_string());
     let play = match game.phase {
@@ -114,11 +115,6 @@ fn compute(time: Res<Time>, settings: Res<Settings>, series: Res<Series>, games:
         Phase::Paused | Phase::Starting => "Resume",
     };
     changed |= put(&mut r.play, play.to_owned());
-    let opening = match OPENINGS[settings.opening] {
-        0 => "Empty board".to_owned(),
-        stones => format!("{stones} random discs"),
-    };
-    changed |= put(&mut r.opening, opening);
 
     let last = game.last.map_or_else(String::new, |(player, col, millis)| {
         format!("   (last: {} played column {} in {} ms)", player.name(), col + 1, millis)
@@ -145,7 +141,7 @@ fn compute(time: Res<Time>, settings: Res<Settings>, series: Res<Series>, games:
                 format!("{} ({}) is thinking...{last}", game.to_move.name(), agent(game.to_move))
             }
             Phase::Running => format!("{} to move{last}", game.to_move.name()),
-            Phase::Paused => format!("Paused. Play resumes, Step plays one move.{last}"),
+            Phase::Paused => format!("Paused. Play resumes.{last}"),
             Phase::Finished => {
                 let result = match game.outcome {
                     Some(Outcome::Winner(player)) => format!("{} ({}) wins!", player.name(), agent(player)),
@@ -194,7 +190,20 @@ fn compute(time: Res<Time>, settings: Res<Settings>, series: Res<Series>, games:
         _ => (format!("{}  vs  {}", agent(Player::Red), agent(Player::Yellow)), false),
     };
     changed |= put(&mut r.banner, banner);
-    changed |= put(&mut r.note, format!("draws {}   \u{b7}   games {}", series.draws, series.games()));
+    let note = match (series.games(), series.draws) {
+        (0, _) => String::new(),
+        (1, 0) => "1 game".to_owned(),
+        (games, 0) => format!("{games} games"),
+        (games, 1) => format!("{games} games   \u{b7}   1 draw"),
+        (games, draws) => format!("{games} games   \u{b7}   {draws} draws"),
+    };
+    changed |= put(&mut r.note, note);
+    // Only an error gets a toast; a win or draw shows on the board and in the score.
+    let toast = games
+        .iter()
+        .find_map(|game| game.error.as_ref())
+        .map_or_else(String::new, |error| format!("Stopped: {error}"));
+    changed |= put(&mut r.toast, toast);
     if r.banner_result != is_result || r.score != series.wins || r.to_move != game.to_move {
         changed = true;
     }

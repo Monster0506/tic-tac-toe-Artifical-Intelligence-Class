@@ -79,7 +79,7 @@ fn main() {
         );
     }
     if let Some(capture) = Capture::from_env() {
-        app.insert_resource(capture).add_systems(Update, (capture_and_exit, simulate_click));
+        app.insert_resource(capture).add_systems(Update, (capture_and_exit, simulate_click, simulate_hover));
     }
     app.run();
 }
@@ -102,6 +102,10 @@ struct Capture {
     keys_at: f32,
     seconds: f32,
     stage: u8,
+    /// `C4_NAV`: slide steps (`>` next, `<` back) pressed one at a time, 0.6 s apart
+    /// from `C4_KEYS_AT`, as a presenter would.
+    nav: Vec<char>,
+    nav_done: usize,
 }
 
 impl Capture {
@@ -116,6 +120,8 @@ impl Capture {
             keys_at: std::env::var("C4_KEYS_AT").ok().and_then(|text| text.parse().ok()).unwrap_or(0.0),
             seconds: std::env::var("C4_SECONDS").ok().and_then(|text| text.parse().ok()).unwrap_or(4.0),
             stage: 0,
+            nav: std::env::var("C4_NAV").unwrap_or_default().chars().collect(),
+            nav_done: 0,
         })
     }
 }
@@ -163,6 +169,51 @@ fn simulate_click(
     *frames += 1;
 }
 
+/// Developer aid: `C4_HOVER=x,y;x,y;...` (window pixels) moves the pointer to each
+/// point in turn, a quarter of a second apart, starting at `C4_KEYS_AT`, without
+/// clicking: for checking hover animations.
+fn simulate_hover(
+    time: Res<Time>,
+    capture: Res<Capture>,
+    windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
+    mut last: Local<Option<usize>>,
+    mut input: MessageWriter<bevy::picking::pointer::PointerInput>,
+) {
+    use bevy::camera::NormalizedRenderTarget;
+    use bevy::picking::pointer::{Location, PointerAction, PointerId, PointerInput};
+    let Ok(text) = std::env::var("C4_HOVER") else {
+        return;
+    };
+    let points: Vec<Vec2> = text
+        .split(';')
+        .filter_map(|point| {
+            let (x, y) = point.split_once(',')?;
+            Some(Vec2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        })
+        .collect();
+    let since = time.elapsed_secs() - capture.keys_at;
+    if since < 0.0 || points.is_empty() {
+        return;
+    }
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a few points")]
+    let index = ((since / 0.25) as usize).min(points.len() - 1);
+    if *last == Some(index) {
+        return;
+    }
+    *last = Some(index);
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Some(target) = bevy::window::WindowRef::Primary.normalize(Some(window)) else {
+        return;
+    };
+    let location = Location {
+        target: NormalizedRenderTarget::Window(target),
+        position: points[index],
+    };
+    input.write(PointerInput::new(PointerId::Mouse, location, PointerAction::Move { delta: Vec2::ZERO }));
+}
+
 fn capture_and_exit(
     mut commands: Commands,
     time: Res<Time>,
@@ -180,6 +231,17 @@ fn capture_and_exit(
         deck.go_to(slide.saturating_sub(1));
         mode.set(Mode::Slides);
     }
+    #[expect(clippy::cast_precision_loss, reason = "a few steps")]
+    while capture.nav_done < capture.nav.len() && now >= capture.keys_at + 0.6 * capture.nav_done as f32 {
+        match capture.nav[capture.nav_done] {
+            '>' => {
+                deck.next();
+            }
+            '<' => deck.back(),
+            _ => {}
+        }
+        capture.nav_done += 1;
+    }
     match capture.stage {
         0 if now >= capture.keys_at => {
             for key in capture.keys.chars() {
@@ -188,7 +250,6 @@ fn capture_and_exit(
                     '+' => Some(Action::Grow),
                     '[' => Some(Action::Faster),
                     ']' => Some(Action::Slower),
-                    'o' => Some(Action::CycleOpening),
                     '.' => Some(Action::MoreBoards),
                     ',' => Some(Action::FewerBoards),
                     'a' => {

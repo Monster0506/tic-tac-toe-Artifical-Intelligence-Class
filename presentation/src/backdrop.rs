@@ -98,12 +98,26 @@ fn dim(materials: &mut Assets<StandardMaterial>, colour: Color, alpha: f32, glow
     })
 }
 
+/// The falling chips behind the slides: real disc colours, softened just enough to stay
+/// behind the content on the cream stage.
+fn drifting(materials: &mut Assets<StandardMaterial>, colour: Color) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial {
+        base_color: colour.with_alpha(0.75),
+        // Self-lit: they fall far behind the stage, where little light reaches.
+        emissive: colour.to_linear() * 0.6,
+        perceptual_roughness: 0.35,
+        clearcoat: 0.5,
+        alpha_mode: AlphaMode::Blend,
+        ..default()
+    })
+}
+
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     commands.insert_resource(BackdropMaterials {
         board: dim(&mut materials, BOARD, 0.42, 0.0),
         discs: [dim(&mut materials, RED, 0.5, 0.05), dim(&mut materials, YELLOW, 0.5, 0.05)],
         glow: [dim(&mut materials, RED, 0.9, 2.5), dim(&mut materials, YELLOW, 0.9, 2.5)],
-        drift: [dim(&mut materials, RED, 0.16, 0.0), dim(&mut materials, YELLOW, 0.16, 0.0)],
+        drift: [drifting(&mut materials, RED), drifting(&mut materials, YELLOW)],
     });
 }
 
@@ -125,7 +139,7 @@ fn new_engine(seed: u64) -> Engine {
 
 fn pose(index: usize) -> (Vec3, Quat, f32) {
     // Slides that show their own board get the backdrop out of the way, far left.
-    if matches!(SLIDES.get(index).map(|slide| &slide.visual), Some(Visual::Board { .. })) {
+    if matches!(SLIDES.get(index).map(|slide| &slide.visual), Some(Visual::Game(_))) {
         return (STAGE + Vec3::new(-30.0, -15.0, -34.0), Quat::from_rotation_y(0.6), 1.7);
     }
     let (at, turn, scale) = POSES[index % POSES.len()];

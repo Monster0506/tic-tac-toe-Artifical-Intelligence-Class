@@ -1,6 +1,7 @@
-//! Colours and fonts, modelled on the "Drewgo Ember" palette from Watch-Ember
-//! (`shared/colors.ts`, dark mode): warm charcoal surfaces, cream text, one orange accent.
-//! Fonts follow it too: a thin serif for the title, the system sans for everything else.
+//! Colours and fonts, after the Liquid Glass look of quiz-catch
+//! (`frontend/src/aesthetics/glass.css`) in its light theme: a warm cream wallpaper,
+//! controls and panes as tinted glass floating over it with a lit rim, and Inter
+//! throughout (the face quiz-catch uses wherever San Francisco is not installed).
 
 use std::sync::OnceLock;
 
@@ -20,59 +21,117 @@ const fn hexa(rgb: u32, alpha: f32) -> Color {
     Color::srgba(byte(rgb >> 16), byte(rgb >> 8), byte(rgb), alpha)
 }
 
-pub const BG: Color = hex(0x0028_2820);
-/// Ember's surface colour, slightly see-through so the scene shows behind panels.
-pub const PANEL: Color = hexa(0x0034_342c, 0.94);
-pub const RAISED: Color = hex(0x003f_3f35);
-pub const BORDER: Color = hex(0x004a_4a3e);
-pub const HOVER: Color = hex(0x0050_5043);
-pub const PRESS: Color = hex(0x005c_5c4d);
-pub const TEXT: Color = hex(0x00eb_dbb2);
-pub const MUTED: Color = hex(0x00bd_b394);
-pub const FAINT: Color = hex(0x008c_856d);
+// ------------------------------------------------------------------ the palette
+// quiz-catch's light palette (`styles.css`, `prefers-color-scheme: light`), with the
+// project's two accent colours: orange `#ff922f` and deep red `#b61b0d`. The discs
+// keep their own red and yellow.
+
+/// The wallpaper everything floats over.
+pub const BG: Color = hex(0x00f7_f3e8);
+pub const RAISED: Color = hex(0x00ef_e9d9);
+pub const TEXT: Color = hex(0x0028_2820);
+pub const MUTED: Color = hex(0x005f_5b49);
+pub const FAINT: Color = hex(0x008f_8a75);
+/// Accent one: orange.
 pub const ACCENT: Color = hex(0x00ff_922f);
-pub const ON_ACCENT: Color = hex(0x0028_2820);
-/// Ember's "success", and the gruvbox aqua beside it: agent family colours.
-pub const GREEN: Color = hex(0x00b8_bb26);
-pub const AQUA: Color = hex(0x0083_a598);
-/// Ember's "danger" and "star": the two disc colours.
-pub const RED: Color = hex(0x00fb_4934);
-pub const YELLOW: Color = hex(0x00fa_bd2f);
-/// The board. Ember has no blue, so this is the gruvbox blue it sits beside.
-pub const BOARD: Color = hex(0x002c_6a70);
-/// The table under the board: a darker, browner surface.
-pub const TABLE: Color = hex(0x001c_1812);
+/// Accent two, deep red (`#b61b0d`): where orange runs to in the ember gradient, and
+/// accent text on cream (orange is too light to read there).
+pub const EMBER: Color = hex(0x00b6_1b0d);
+pub const ACCENT_INK: Color = EMBER;
 
-/// The 2D UI's fonts, read from the Windows font folder at startup. (Bevy's
-/// `system_font_discovery` would find them by name, but in 0.20 it leaked memory on every
-/// text change, hundreds of MB a second in fast games.)
-static FONTS: OnceLock<(Handle<Font>, Handle<Font>, Handle<Font>)> = OnceLock::new();
-
-fn font_file(names: &[&str]) -> Option<Vec<u8>> {
-    let dir = std::env::var_os("WINDIR").map_or_else(|| "C:/Windows".into(), std::path::PathBuf::from).join("Fonts");
-    names.iter().find_map(|name| std::fs::read(dir.join(name)).ok())
+/// The ember gradient: orange at 0, deep red at 1.
+pub fn heat(t: f32) -> Color {
+    ACCENT.mix(&EMBER, t.clamp(0.0, 1.0))
 }
+pub const ON_ACCENT: Color = hex(0x0028_2820);
+/// "success" and "rain": agent family colours on the slides.
+pub const GREEN: Color = hex(0x006f_7a0a);
+pub const AQUA: Color = hex(0x002f_6f86);
+
+/// The two disc colours, bright enough to read as red and yellow plastic.
+pub const RED: Color = hex(0x00e0_4a2f);
+pub const YELLOW: Color = hex(0x00f6_b92b);
+/// The same two as text on cream ("danger" and "star").
+pub const RED_INK: Color = hex(0x00c8_331f);
+pub const YELLOW_INK: Color = hex(0x00b0_7a10);
+/// The board: the palette's "rain" blue.
+pub const BOARD: Color = hex(0x002f_6f86);
+/// The table under the board: a deeper cream.
+pub const TABLE: Color = hex(0x00e6_dcc4);
+
+// ------------------------------------------------------------------ glass
+// The light theme's materials, thinnest to thickest, and the fills controls sit in.
+
+pub const fn surface(alpha: f32) -> Color {
+    hexa(0x00ff_fdf7, alpha)
+}
+pub const fn ink(alpha: f32) -> Color {
+    hexa(0x0028_2820, alpha)
+}
+pub const fn white(alpha: f32) -> Color {
+    Color::srgba(1.0, 1.0, 1.0, alpha)
+}
+
+pub const GLASS: Color = surface(0.62);
+pub const THICK: Color = surface(0.84);
+pub const FILL: Color = ink(0.05);
+pub const FILL_2: Color = ink(0.08);
+pub const SEP: Color = ink(0.10);
+/// The flowing pill behind a selection.
+pub const PILL: Color = surface(0.94);
+/// Light on the rim: brightest where it enters and leaves (top left, bottom right).
+pub const HI_A: Color = white(0.95);
+pub const HI_B: Color = white(0.55);
+pub const HI_C: Color = white(0.2);
+pub const SHADOW: Color = Color::srgba(60.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 0.16);
+
+// ------------------------------------------------------------------ fonts
+
+/// Inter in four weights, built into the binary so the app looks the same anywhere.
+/// (Bevy's `system_font_discovery` leaked memory on every text change in 0.20, so
+/// fonts are handed over as assets instead.)
+struct Fonts {
+    regular: Handle<Font>,
+    medium: Handle<Font>,
+    semibold: Handle<Font>,
+    bold: Handle<Font>,
+}
+
+static FONTS: OnceLock<Fonts> = OnceLock::new();
 
 /// Loads the UI fonts; runs before the UI is built.
 pub fn load_fonts(mut fonts: ResMut<Assets<Font>>) {
-    let mut load = |names: &[&str]| font_file(names).map_or_else(Handle::default, |bytes| fonts.add(Font::from_bytes(bytes)));
-    let ui = load(&["segoeui.ttf", "arial.ttf"]);
-    let title = load(&["times.ttf", "georgia.ttf"]);
-    let bold = load(&["seguisb.ttf", "segoeuib.ttf", "arialbd.ttf"]);
-    FONTS.set((ui, title, bold)).ok();
+    let mut load = |bytes: &[u8]| fonts.add(Font::from_bytes(bytes.to_vec()));
+    FONTS
+        .set(Fonts {
+            regular: load(include_bytes!("../fonts/Inter-Regular.ttf")),
+            medium: load(include_bytes!("../fonts/Inter-Medium.ttf")),
+            semibold: load(include_bytes!("../fonts/Inter-SemiBold.ttf")),
+            bold: load(include_bytes!("../fonts/Inter-Bold.ttf")),
+        })
+        .ok();
 }
 
-/// Segoe UI (falls back to Bevy's built-in font).
+fn pick(face: fn(&Fonts) -> &Handle<Font>) -> FontSource {
+    FONTS.get().map_or_else(FontSource::default, |fonts| FontSource::Handle(face(fonts).clone()))
+}
+
+/// Inter Regular: body text.
 pub fn ui_font() -> FontSource {
-    FONTS.get().map_or_else(FontSource::default, |(ui, ..)| FontSource::Handle(ui.clone()))
+    pick(|fonts| &fonts.regular)
 }
 
-/// Segoe UI Semibold, for headings and numbers.
+/// Inter Medium: buttons and labels.
+pub fn medium_font() -> FontSource {
+    pick(|fonts| &fonts.medium)
+}
+
+/// Inter SemiBold: headlines and values.
 pub fn bold_font() -> FontSource {
-    FONTS.get().map_or_else(FontSource::default, |(.., bold)| FontSource::Handle(bold.clone()))
+    pick(|fonts| &fonts.semibold)
 }
 
-/// The serif used for Watch-Ember's logo.
+/// Inter Bold: large titles and the score.
 pub fn title_font() -> FontSource {
-    FONTS.get().map_or_else(FontSource::default, |(_, title, _)| FontSource::Handle(title.clone()))
+    pick(|fonts| &fonts.bold)
 }

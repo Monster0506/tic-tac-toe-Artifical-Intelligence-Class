@@ -1,6 +1,11 @@
 //! The presentation's content: what we did, how, and why the results came out the way
 //! they did. Every number comes from `results/` (measurements.csv, accuracy.csv,
 //! DEVIATIONS.md) or `midterm_proposal.md`.
+//!
+//! Pacing: about six seconds per press of Next, and every press moves something on
+//! screen (a bar grows or lights up, the board grows, a tile or a layer arrives). A
+//! press never only drops discs: games on the board slides play out by themselves.
+//! `every_beat_moves_something` checks that.
 
 use std::time::{Duration, Instant};
 
@@ -12,11 +17,27 @@ pub struct Slide {
     pub kicker: &'static str,
     pub title: &'static str,
     pub visual: Visual,
-    /// One entry per press of Next: each reveals the next part of the visual and has a
-    /// few seconds of things to say (shown in the presenter window, never on the slide).
+    /// One entry per press of Next: each brings in the next part of the visual and has
+    /// about six seconds of things to say (shown in the presenter window, never on the
+    /// slide).
     pub beats: &'static [Beat],
-    /// The time budget for this slide; all of them add up to 10 minutes.
-    pub seconds: u32,
+}
+
+impl Slide {
+    /// The time budget for this slide: six seconds for every 26 words (at least one
+    /// lot per beat).
+    pub fn seconds(&self) -> u32 {
+        self.beats.iter().map(Beat::seconds).sum()
+    }
+}
+
+pub const SECONDS_PER_BEAT: u32 = 6;
+/// About what can be said in `SECONDS_PER_BEAT`.
+pub const WORDS_PER_BEAT: usize = 26;
+
+/// The whole talk, in seconds.
+pub fn talk_seconds() -> u32 {
+    SLIDES.iter().map(Slide::seconds).sum()
 }
 
 /// One step of a slide.
@@ -24,6 +45,13 @@ pub struct Beat {
     /// An optional short line under the visual while this step is showing.
     pub caption: &'static str,
     pub say: &'static str,
+}
+
+impl Beat {
+    pub fn seconds(&self) -> u32 {
+        let words = self.say.split_whitespace().count();
+        u32::try_from(words.div_ceil(WORDS_PER_BEAT).max(1)).unwrap_or(1) * SECONDS_PER_BEAT
+    }
 }
 
 const fn say(say: &'static str) -> Beat {
@@ -35,19 +63,28 @@ const fn show(caption: &'static str, say: &'static str) -> Beat {
 }
 
 pub enum Visual {
-    /// A single board with a game on it (columns are 0-based).
-    Board { columns: u32, rows: u32, moves: &'static [u32] },
-    /// One board that physically grows, a stage per beat.
+    /// One board that physically grows, a stage per beat, its size written beside it.
     Expand(&'static [Stage]),
+    /// One board, centred, whose game plays itself out as the slide opens (one stage,
+    /// one beat).
+    Game(&'static [Stage]),
     /// A horizontal bar chart.
     Bars(Bars),
     /// The eight agents; the beat each roster entry shows up on.
     Agents(&'static [usize]),
-    /// The convolutional network: board, then layers, then column scores.
+    /// The convolutional network: board, layers, column scores, the move it picks, and
+    /// the search tree it guides.
     Network,
-    /// A 7x6 position with every column solved live by our solver.
+    /// A 7x6 position with every column solved live by our solver, then its checks.
     Solved,
 }
+
+/// Beats the network slide uses (board, layers, scores, its move, the tree).
+#[cfg(test)]
+pub const NETWORK_BEATS: usize = 5;
+/// Beats the solver slide uses (board, labels, best move, checks).
+#[cfg(test)]
+pub const SOLVED_BEATS: usize = 4;
 
 pub struct Stage {
     pub columns: u32,
@@ -59,13 +96,44 @@ pub struct Stage {
     pub moves: &'static [u32],
 }
 
+/// A stage of a `Game`: just discs.
+const fn drop(columns: u32, rows: u32, moves: &'static [u32]) -> Stage {
+    Stage { columns, rows, name: "", note: "", moves }
+}
+
 pub struct Bars {
     pub caption: &'static str,
     /// Value at the left edge of the bars (so close values still look different).
     pub floor: f32,
     pub ceiling: f32,
-    /// (label, plotted value, value text, highlighted, beat it shows up on)
-    pub items: &'static [(&'static str, f32, &'static str, bool, usize)],
+    pub items: &'static [Bar],
+}
+
+pub struct Bar {
+    pub label: &'static str,
+    /// The plotted value (between the chart's floor and ceiling).
+    pub value: f32,
+    /// The value as written next to the bar.
+    pub text: &'static str,
+    /// The beat the bar grows in on.
+    pub beat: usize,
+    /// The beat it lights up orange on: the same beat means it grows in orange, a later
+    /// one sweeps orange along it then.
+    pub lit: Option<usize>,
+}
+
+const fn bar(label: &'static str, value: f32, text: &'static str, beat: usize) -> Bar {
+    Bar { label, value, text, beat, lit: None }
+}
+
+const fn lit(label: &'static str, value: f32, text: &'static str, beat: usize, lit: usize) -> Bar {
+    Bar {
+        label,
+        value,
+        text,
+        beat,
+        lit: Some(lit),
+    }
 }
 
 /// A 7x6 game, 1-based columns as `Board::from_moves` expects. Solved at startup.
@@ -75,16 +143,12 @@ pub const SLIDES: &[Slide] = &[
     Slide {
         kicker: "group 3  \u{b7}  TJ Raklovits and Andrew Roddy",
         title: "Connect Four AI",
-        visual: Visual::Board {
-            columns: 9,
-            rows: 8,
-            moves: &[4, 4, 3, 5, 5, 3, 4, 2, 6, 4, 3, 3, 5, 2, 6, 6, 2],
-        },
-        beats: &[
-            say("Hey everyone, we're TJ and Andrew from group 3, and our project is Connect Four."),
-            say("We trained agents on an 8 by 7 board and tested them on 9 by 8, which nobody has solved. Everything you'll see today, these slides included, is running live in our Rust code."),
-        ],
-        seconds: 25,
+        visual: Visual::Game(&[drop(9, 8, &[4, 4, 3, 5, 5, 3, 4, 2, 6, 4, 3, 3, 5, 2, 6, 6, 2])]),
+        beats: &[say(
+            "Hey everyone, we're TJ and Andrew from group 3. Our project is Connect Four, played by eight \
+             different AI agents. We trained them on an 8 by 7 board and tested them on 9 by 8. And \
+             everything you'll see today, these slides included, is running live in our Rust code.",
+        )],
     },
     Slide {
         kicker: "the question",
@@ -92,16 +156,18 @@ pub const SLIDES: &[Slide] = &[
         visual: Visual::Expand(&[
             Stage { columns: 7, rows: 6, name: "7 \u{d7} 6", note: "solved\nfirst player wins", moves: &[3, 3, 2, 4, 4, 2, 3, 5] },
             Stage { columns: 8, rows: 7, name: "8 \u{d7} 7", note: "solved by John Tromp\nour training board", moves: &[7, 6] },
-            Stage { columns: 9, rows: 8, name: "9 \u{d7} 8", note: "never solved\nour test board", moves: &[8, 3] },
-            Stage { columns: 9, rows: 8, name: "?", note: "does what they learn\ncarry over?", moves: &[] },
+            Stage { columns: 9, rows: 8, name: "9 \u{d7} 8", note: "never solved\nour test board", moves: &[8, 3, 4, 4, 5, 1] },
         ]),
         beats: &[
-            say("This is the normal 7 by 6 board. It's solved, and if both sides play perfectly the first player wins."),
-            say("Add a column and a row and you get 8 by 7. John Tromp solved this one too, also a first player win. This is where we trained."),
-            say("One more of each and you're at 9 by 8. Nobody has solved it. We worked out it would take our hardware something like 15 years."),
-            say("So our question was pretty simple. If we train agents on a board we can solve, do they still play well on one we can't? And if some methods carry over better than others, why?"),
+            say("This is the normal 7 by 6 board. It's solved: with perfect play the first player wins."),
+            say("Add a column and a row and you get 8 by 7. John Tromp solved it too. This is where we trained."),
+            show(
+                "does what they learn carry over, and why?",
+                "One more of each and you're at 9 by 8. Nobody has solved it; on our hardware it would take something \
+                 like 15 years. So our question: if we train agents on a board we can solve, do they still play well \
+                 on one we can't? And if some methods carry over better than others, why?",
+            ),
         ],
-        seconds: 50,
     },
     Slide {
         kicker: "scale",
@@ -111,94 +177,95 @@ pub const SLIDES: &[Slide] = &[
             floor: 0.0,
             ceiling: 35.0,
             items: &[
-                ("7x6", 12.65, "10^12.7", false, 0),
-                ("8x7", 26.7, "10^26.7", false, 1),
-                ("9x8", 34.3, "10^34.3", true, 2),
+                bar("7x6", 12.65, "10^12.7", 0),
+                bar("8x7", 26.7, "10^26.7", 1),
+                lit("9x8", 34.3, "10^34.3", 2, 3),
             ],
         }),
         beats: &[
-            say("Just to give you a feel for the size. 7 by 6 has about 4.5 trillion legal positions."),
+            say("To give you a feel for the size: 7 by 6 has about 4.5 trillion legal positions."),
             say("For 8 by 7 the upper bound is around 10 to the 26."),
-            say("And 9 by 8 is around 10 to the 34. This is a log scale, so every step up is millions of times bigger. You just can't brute force that."),
+            say("And 9 by 8 is around 10 to the 34."),
+            say("This is a log scale, so every step up is millions of times bigger. You just can't brute force that."),
         ],
-        seconds: 30,
     },
     Slide {
         kicker: "step 1",
         title: "An exact solver",
         visual: Visual::Solved,
         beats: &[
-            say("Step one was an exact solver. It's alpha-beta search on bitboards with a transposition table, which is pretty much how the published Connect Four solvers work."),
-            say("Give it any position and it tells you whether each column wins, draws or loses. These W, D and L labels were worked out live when the app started up."),
+            say("Step one was an exact solver: alpha-beta search on bitboards with a transposition table, like the published solvers."),
+            say("Give it any position and it says whether each column wins, draws or loses."),
+            say("These labels were worked out live when the app started. Here, the marked column wins."),
             show(
-                "67,557 UCI positions  \u{b7}  6,000 Pons tests  \u{b7}  0 wrong",
-                "We checked it against all 67,557 positions in the UCI dataset and 6,000 of Pascal Pons' test positions, and it got every single one right.",
+                "0 wrong",
+                "We checked it against all 67,557 UCI positions and 6,000 of Pascal Pons' tests. It got every one right.",
             ),
         ],
-        seconds: 40,
     },
     Slide {
         kicker: "the wall",
         title: "Why not just solve 9x8?",
         visual: Visual::Bars(Bars {
-            caption: "median seconds to solve a 9x8 position, by stones",
+            caption: "seconds to solve a position (log scale), by stones on the board",
             floor: -1.5,
-            ceiling: 3.0,
+            ceiling: 3.4,
             items: &[
-                ("48 stones", -1.03, "0.09 s", false, 0),
-                ("36 stones", -0.9, "0.13 s", false, 0),
-                ("30 stones", -0.5, "0.32 s", false, 0),
-                ("26 stones", 0.34, "2.2 s", false, 1),
-                ("24 stones", 1.07, "11.7 s", false, 1),
-                ("20 stones", 1.9, "80 s", false, 2),
-                ("16 stones", 2.9, "> 600 s", true, 2),
+                bar("48 stones", -1.03, "0.09 s", 0),
+                bar("36 stones", -0.9, "0.13 s", 0),
+                bar("30 stones", -0.5, "0.32 s", 1),
+                bar("26 stones", 0.34, "2.2 s", 2),
+                bar("24 stones", 1.07, "11.7 s", 3),
+                bar("20 stones", 1.9, "80 s", 4),
+                lit("16 stones", 2.9, "> 600 s", 5, 5),
+                lit("8x7, 6 stones", 3.26, "> 30 min", 6, 6),
             ],
         }),
         beats: &[
-            say("So why didn't we just solve 9 by 8? Late in the game it's quick, about a tenth of a second."),
-            say("But solve time blows up as the board gets emptier. At 24 stones the median is around 12 seconds, and the worst one we saw took 31 minutes."),
-            say("At 16 stones every probe we ran went past ten minutes."),
-            show(
-                "8x7 with just 6 stones: over half an hour",
-                "Even 8 by 7 with only six stones took more than half an hour. That wall is really the reason we needed learning at all.",
-            ),
+            say("So why not just solve 9 by 8? Late in the game it's quick, about a tenth of a second."),
+            say("With fewer stones it slows down: a third of a second at 30."),
+            say("Two seconds at 26 stones."),
+            say("At 24 the median is 12 seconds, and the worst one we saw took 31 minutes."),
+            say("At 20 stones it's over a minute."),
+            say("And at 16 stones every probe we ran went past ten minutes."),
+            say("Even 8 by 7 with six stones took over half an hour. That wall is why we needed learning."),
         ],
-        seconds: 45,
     },
     Slide {
         kicker: "step 2",
         title: "The data",
         visual: Visual::Bars(Bars {
-            caption: "solved positions",
+            caption: "positions labelled by the solver",
             floor: 0.0,
             ceiling: 110_000.0,
             items: &[
-                ("8x7 training", 106_898.0, "106,898", true, 0),
-                ("8x7 openings", 2_000.0, "2,000", false, 1),
-                ("9x8 late game", 9_990.0, "9,990", false, 2),
+                lit("8x7 training", 106_898.0, "106,898", 0, 0),
+                bar("8x7 openings", 2_000.0, "2,000", 1),
+                bar("9x8 late game", 9_990.0, "9,990", 2),
             ],
         }),
         beats: &[
-            say("We used the solver to build our data. About 107 thousand 8 by 7 positions between 14 and 44 stones, with every column labelled."),
-            say("We also made 2,000 harder openings, around 10 to 12 stones, just for testing."),
+            say("We used the solver to build our data: about 107 thousand 8 by 7 positions, every column labelled."),
+            say("Plus 2,000 harder openings, 10 to 12 stones, just for testing."),
             show(
                 "192 cores, one position each",
-                "And we solved about 10 thousand late game 9 by 8 positions, so we could check how well things transfer. All of that ran on a 192 core cloud machine.",
+                "And about 10 thousand late game 9 by 8 positions, to test transfer, solved on a 192 core cloud machine.",
             ),
         ],
-        seconds: 35,
     },
     Slide {
         kicker: "step 3",
         title: "Eight agents",
         // MCTS, AB learned, AB handcrafted, network MCTS, Allis, solver, network, safe random.
-        visual: Visual::Agents(&[0, 1, 0, 1, 2, 0, 1, 2]),
+        visual: Visual::Agents(&[0, 2, 1, 3, 4, 1, 3, 5]),
         beats: &[
-            say("Then we built eight agents. First the search ones: MCTS, alpha-beta, and the exact solver itself."),
-            say("Then the ones that learn: a learned evaluation, a neural network, and the network guiding MCTS."),
-            say("And Allis' hand written rules, plus a safe random baseline that plays randomly but always takes a win and blocks a threat. Every agent gets one second per move."),
+            say("Then we built eight agents. First, Monte Carlo tree search."),
+            say("Alpha-beta with a handcrafted evaluation, and the exact solver itself, limited to one second."),
+            say("Then the ones that learn: alpha-beta with a learned evaluation."),
+            say("A convolutional neural network, and that network guiding MCTS."),
+            say("Victor Allis' hand written strategy rules."),
+            say("And safe random: random, but it always takes a win and blocks a loss. Every agent gets one second a move."),
         ],
-        seconds: 30,
     },
     Slide {
         kicker: "search",
@@ -208,24 +275,25 @@ pub const SLIDES: &[Slide] = &[
             floor: 85.0,
             ceiling: 100.0,
             items: &[
-                ("depth 1", 90.8, "90.8%", false, 0),
-                ("depth 2", 93.8, "93.8%", false, 1),
-                ("depth 4", 95.6, "95.6%", false, 1),
-                ("depth 6", 96.3, "96.3%", false, 1),
-                ("depth 8", 97.5, "97.5%", true, 2),
-                ("depth 12", 97.8, "97.8%", false, 2),
+                bar("depth 1", 90.8, "90.8%", 0),
+                bar("depth 2", 93.8, "93.8%", 1),
+                bar("depth 4", 95.6, "95.6%", 2),
+                bar("depth 6", 96.3, "96.3%", 2),
+                lit("depth 8", 97.5, "97.5%", 3, 3),
+                lit("depth 12", 97.8, "97.8%", 4, 5),
             ],
         }),
         beats: &[
-            say("First up is alpha-beta with a handcrafted evaluation that looks at threats and row parity. Even at depth 1 it agrees with the solver about 91 percent of the time."),
-            say("Every extra bit of depth helps a little."),
-            say("Depth 8 gets to 97.5. Depth 12 barely adds anything, and it looks at 35 times as many nodes, around 380 thousand a move."),
+            say("Alpha-beta with a handcrafted evaluation of threats and row parity. At depth 1 it matches the solver 91 percent of the time."),
+            say("Depth 2 gets to about 94."),
+            say("Each extra bit of depth helps a little."),
+            say("Depth 8 reaches 97.5 percent."),
+            say("Depth 12 barely adds anything, and it looks at 35 times as many nodes."),
             show(
-                "but deeper still wins 2 of 3 games on 9x8",
-                "But in real games on 9 by 8 the deeper search still wins about two out of three, so the extra depth does pay off.",
+                "deeper still wins 2 of 3 games on 9x8",
+                "But in real games on 9 by 8 the deeper search still wins two out of three, so depth does pay off.",
             ),
         ],
-        seconds: 45,
     },
     Slide {
         kicker: "search + learning",
@@ -235,20 +303,19 @@ pub const SLIDES: &[Slide] = &[
             floor: 50.0,
             ceiling: 75.0,
             items: &[
-                ("constant guess", 56.6, "56.6%", false, 0),
-                ("handcrafted", 67.8, "67.8%", false, 1),
-                ("learned", 70.1, "70.1%", true, 2),
+                bar("constant guess", 56.6, "56.6%", 0),
+                bar("handcrafted", 67.8, "67.8%", 1),
+                lit("learned", 70.1, "70.1%", 2, 2),
             ],
         }),
         beats: &[
-            say("Next we tried learning the evaluation instead of tuning it by hand. Just guessing the most common result gets 56.6 percent."),
+            say("Next we learned the evaluation instead of tuning it by hand. Guessing the most common result gets 56.6 percent."),
             say("Our hand tuned evaluation gets 67.8."),
             show(
                 "on 9x8: Elo 722 learned vs 690 handcrafted",
-                "We fit a logistic regression on the same threat features, split into good rows and bad rows, using the solver's 8 by 7 labels. It gets 70.1, and it holds up on 9 by 8 too, 722 Elo against 690.",
+                "A logistic regression on the same features, trained on solver labels, gets 70.1, and it holds up on 9 by 8: 722 Elo against 690.",
             ),
         ],
-        seconds: 40,
     },
     Slide {
         kicker: "search",
@@ -258,64 +325,86 @@ pub const SLIDES: &[Slide] = &[
             floor: 600.0,
             ceiling: 780.0,
             items: &[
-                ("0.5 s", 694.5, "695", false, 0),
-                ("1 s", 739.9, "740", false, 2),
-                ("5 s", 754.4, "754", false, 3),
-                ("10 s", 760.7, "761", true, 3),
+                bar("0.5 s", 694.5, "695", 0),
+                lit("1 s", 739.9, "740", 1, 1),
+                bar("5 s", 754.4, "754", 2),
+                lit("10 s", 760.7, "761", 3, 3),
             ],
         }),
         beats: &[
-            say("Monte Carlo tree search doesn't need an evaluation function at all. It plays a ton of random games to the end, about 740 thousand a second on 9 by 8."),
+            say("MCTS needs no evaluation at all. It plays random games to the end, about 740 thousand a second on 9 by 8."),
             show(
                 "+ proven wins and losses",
-                "It grows its tree toward whichever moves win the most. We added a rule for proven results, so it never misses a win or a loss that's right in front of it.",
+                "It grows its tree toward the moves that win most, and never misses a proven win or loss. At one second it was our strongest agent.",
             ),
-            say("At one second a move it ended up being our strongest agent."),
-            say("And it keeps getting better the more time you give it."),
+            say("Give it more time and it keeps improving."),
+            say("Up to 761 Elo at ten seconds a move."),
         ],
-        seconds: 45,
     },
     Slide {
         kicker: "learning",
         title: "A network for any board",
         visual: Visual::Network,
         beats: &[
-            say("For the neural network we went fully convolutional, so the exact same weights can run on any board size."),
-            say("It's 6 layers with 64 channels. We trained it for 12 epochs on the CPU because our GPU setup failed."),
+            say("For the neural network we went fully convolutional, so the same weights run on any board size."),
+            say("Six layers of 64 channels, trained for 12 epochs on the CPU after our GPU setup failed."),
+            say("Out comes a score for each column."),
             show(
                 "92.4% of 8x7 moves  \u{b7}  91% of 9x8 moves",
-                "Out comes a score for each column. It matches the solver on 92.4 percent of 8 by 7 moves and still 91 percent on 9 by 8, so what it learned really does transfer.",
+                "It plays the solver's move 92.4 percent of the time on 8 by 7, and still 91 percent on 9 by 8.",
             ),
             show(
-                "alone: weak  \u{b7}  guiding MCTS: Elo 647",
-                "The catch is that one bad move can lose a whole game, so on its own it's pretty weak. When we use it to guide MCTS it gets to an Elo of 647.",
+                "alone: Elo 37  \u{b7}  guiding MCTS: Elo 647",
+                "But alone, one bad move loses a game. Used to guide MCTS's search, it reaches 647 Elo.",
             ),
         ],
-        seconds: 50,
     },
     Slide {
         kicker: "rules",
         title: "Victor Allis' strategy",
         visual: Visual::Bars(Bars {
-            caption: "9x8 score vs safe random (%)",
+            caption: "score vs safe random (%)",
             floor: 50.0,
             ceiling: 90.0,
             items: &[
-                ("all our rules", 78.2, "78.2%", true, 1),
-                ("no claimeven", 83.5, "83.5%", false, 2),
-                ("parity flipped", 75.2, "75.2%", false, 3),
+                lit("all rules, 9x8", 78.2, "78.2%", 0, 0),
+                bar("all rules, 8x7", 83.0, "83.0%", 1),
+                bar("9x8, no claimeven", 83.5, "83.5%", 2),
+                bar("9x8, parity flipped", 75.2, "75.2%", 3),
             ],
         }),
         beats: &[
             show(
                 "win  \u{b7}  block  \u{b7}  play safe  \u{b7}  claimeven  \u{b7}  threats on good rows",
-                "We also coded up part of Victor Allis' strategy rules, with no search at all. Things like win, block, play safe moves, claimeven, and make threats on good rows.",
+                "We also coded part of Victor Allis' strategy rules, with no search. On 9 by 8 they beat safe random 78 percent of the time.",
             ),
-            say("On 9 by 8 it beats safe random 78 percent of the time, and 83 on 8 by 7, so the ideas do carry over."),
-            say("Funny enough, turning off claimeven didn't hurt it at all."),
-            say("Flipping the parity hurt a little. Our set of rules is just too small to play a strong game."),
+            say("And 83 percent on 8 by 7, so the ideas carry over."),
+            say("Funny enough, turning off claimeven didn't hurt at all."),
+            say("Flipping the parity hurt a little. Our set of rules is just too small for a strong game."),
         ],
-        seconds: 40,
+    },
+    Slide {
+        kicker: "transfer",
+        title: "Does it carry over?",
+        visual: Visual::Bars(Bars {
+            caption: "move accuracy against the solver (%): 8x7, then 9x8 late game",
+            floor: 70.0,
+            ceiling: 100.0,
+            items: &[
+                bar("MCTS", 99.1, "98.7 \u{2192} 99.1%", 0),
+                bar("alpha-beta learned", 99.3, "98.9 \u{2192} 99.3%", 0),
+                bar("exact solver (1 s)", 97.8, "97.8 \u{2192} 97.8%", 1),
+                lit("network alone", 91.0, "92.4 \u{2192} 91.0%", 2, 2),
+                bar("Allis rules", 89.7, "88.3 \u{2192} 89.7%", 3),
+                bar("safe random", 77.8, "76.4 \u{2192} 77.8%", 3),
+            ],
+        }),
+        beats: &[
+            say("So does it carry over? The search agents play almost the same on 9 by 8 as on 8 by 7."),
+            say("The time limited solver stays at 97.8."),
+            say("The network drops only a little, from 92.4 to 91, even on a board it never saw."),
+            say("And the rules and the baseline barely move. What they learned transfers."),
+        ],
     },
     Slide {
         kicker: "results",
@@ -325,26 +414,26 @@ pub const SLIDES: &[Slide] = &[
             floor: 0.0,
             ceiling: 760.0,
             items: &[
-                ("MCTS", 739.9, "740", true, 3),
-                ("alpha-beta learned", 722.1, "722", false, 3),
-                ("alpha-beta handcrafted", 690.3, "690", false, 2),
-                ("network MCTS", 647.1, "647", false, 2),
-                ("Allis rules", 160.4, "160", false, 1),
-                ("exact solver", 77.9, "78", false, 1),
-                ("network alone", 36.5, "37", false, 1),
-                ("safe random", 0.0, "0", false, 1),
+                lit("MCTS", 739.9, "740", 4, 4),
+                bar("alpha-beta learned", 722.1, "722", 3),
+                bar("alpha-beta handcrafted", 690.3, "690", 2),
+                bar("network MCTS", 647.1, "647", 2),
+                bar("Allis rules", 160.4, "160", 1),
+                bar("exact solver", 77.9, "78", 1),
+                bar("network alone", 36.5, "37", 0),
+                bar("safe random", 0.0, "0", 0),
             ],
         }),
         beats: &[
             show(
                 "every pair  \u{b7}  50 openings  \u{b7}  both colours  \u{b7}  2,800 games",
-                "This is the main result. We ran a round robin on 9 by 8 where every pair of agents played 50 random openings, both colours, one second a move. That's 2,800 games, with safe random pinned at an Elo of 0.",
+                "The main result: a 9 by 8 round robin, 2,800 games, with safe random pinned at Elo 0 and the network alone just above.",
             ),
-            say("Down at the bottom: the rules, the time limited solver, and the network on its own."),
+            say("The rules, and the time limited solver, come next."),
             say("Then network guided MCTS, and the handcrafted alpha-beta."),
-            say("And at the top, the learned alpha-beta at 722, and MCTS at 740."),
+            say("The learned alpha-beta at 722."),
+            say("And at the top, MCTS at 740."),
         ],
-        seconds: 45,
     },
     Slide {
         kicker: "why",
@@ -354,39 +443,42 @@ pub const SLIDES: &[Slide] = &[
             floor: 50.0,
             ceiling: 100.0,
             items: &[
-                ("alpha-beta learned", 97.0, "97.0%", false, 2),
-                ("MCTS", 96.5, "96.5%", true, 2),
-                ("network MCTS", 96.0, "96.0%", false, 2),
-                ("exact solver (1 s)", 89.4, "89.4%", false, 0),
-                ("network alone", 80.3, "80.3%", false, 1),
-                ("Allis rules", 77.8, "77.8%", false, 1),
-                ("safe random", 54.5, "54.5%", false, 1),
+                bar("alpha-beta learned", 97.0, "97.0%", 3),
+                lit("MCTS", 96.5, "96.5%", 3, 4),
+                bar("network MCTS", 96.0, "96.0%", 3),
+                lit("exact solver (1 s)", 89.4, "89.4%", 0, 1),
+                bar("network alone", 80.3, "80.3%", 2),
+                bar("Allis rules", 77.8, "77.8%", 2),
+                bar("safe random", 54.5, "54.5%", 2),
             ],
         }),
         beats: &[
-            say("So why did it turn out like this? Basically, search wins on a board you can't solve. The exact solver is perfect when it finishes, but it can't finish a 9 by 8 position in one second, so it falls back to playing near the middle."),
-            say("Learned knowledge transfers well, but without search one mistake costs you the game."),
+            say("So why? Search wins on a board you can't solve. The exact solver is perfect, but only if it finishes."),
+            say("In one second it can't finish a 9 by 8 position, so it falls back to playing near the middle."),
+            say("Learned knowledge transfers, but without search one mistake costs you the game."),
             say("Put search on top of that knowledge and most of the problem goes away."),
-            show(
-                "search + knowledge wins",
-                "This chart is the same story on 8 by 7, measured against the solver itself.",
-            ),
+            show("search + knowledge wins", "This is the same story on 8 by 7, measured against the solver itself."),
         ],
-        seconds: 50,
+    },
+    Slide {
+        kicker: "takeaways",
+        title: "What we learned",
+        // Red builds the bottom row, yellow stacks on it, and red's last disc wins.
+        visual: Visual::Game(&[drop(7, 6, &[3, 3, 2, 2, 1, 1, 0])]),
+        beats: &[show(
+            "knowledge guides search",
+            "First: on a board you can't solve, search is what wins. Second: what agents learn on 8 by 7 carries \
+             over to 9 by 8 almost unchanged. And third: knowledge is best used to guide search, not to replace it.",
+        )],
     },
     Slide {
         kicker: "demo",
         title: "Now watch them play",
-        visual: Visual::Board {
-            columns: 8,
-            rows: 7,
-            moves: &[3, 4, 3, 3, 4, 2, 5, 5, 2, 4, 1, 6],
-        },
-        beats: &[
-            say("Alright, let's actually watch them play."),
-            say("I'll pick two agents and a board size. These are the real agents from our results, playing live, and we can even put them on the 9 by 8 test board."),
-        ],
-        seconds: 30,
+        visual: Visual::Game(&[drop(8, 7, &[3, 4, 3, 3, 4, 2, 5, 5, 2, 4, 1, 6])]),
+        beats: &[say(
+            "Alright, let's actually watch them play. I'll pick two agents and a board size. These are the real \
+             agents from our results, playing live, even on the 9 by 8 test board.",
+        )],
     },
 ];
 
@@ -403,6 +495,75 @@ pub fn solved_columns() -> Vec<u32> {
     SOLVED_MOVES.chars().filter_map(|ch| ch.to_digit(10)).map(|col| col - 1).collect()
 }
 
+/// Which beats of a slide bring something new or moving onto the screen.
+#[cfg(test)]
+pub fn moving_beats(slide: &Slide) -> Vec<bool> {
+    let mut moves = vec![false; slide.beats.len()];
+    let mut mark = |beat: usize| {
+        if let Some(slot) = moves.get_mut(beat) {
+            *slot = true;
+        }
+    };
+    match &slide.visual {
+        Visual::Expand(stages) | Visual::Game(stages) => {
+            let mut size = None;
+            for (beat, stage) in stages.iter().enumerate() {
+                let resized = size.is_some_and(|size| size != (stage.columns, stage.rows));
+                // Discs alone do not count: a press must do more than drop chips.
+                if beat == 0 || resized {
+                    mark(beat);
+                }
+                size = Some((stage.columns, stage.rows));
+            }
+        }
+        Visual::Bars(bars) => {
+            for item in bars.items {
+                mark(item.beat);
+                if let Some(lit) = item.lit {
+                    mark(lit);
+                }
+            }
+        }
+        Visual::Agents(list) => list.iter().copied().for_each(&mut mark),
+        Visual::Network => (0..NETWORK_BEATS).for_each(&mut mark),
+        Visual::Solved => (0..SOLVED_BEATS).for_each(&mut mark),
+    }
+    moves
+}
+
+/// The speaker notes, as `SPEAKER_NOTES.md` should read.
+#[cfg(test)]
+pub fn speaker_notes() -> String {
+    let total = talk_seconds();
+    let mut out = format!(
+        "# Speaker notes\n\nAbout {} minutes in total ({} presses of Next, most about {SECONDS_PER_BEAT} seconds). The\n\
+         slides only show a title and a picture, so everything worth saying is here. Each\n\
+         numbered step is one press of Next (right arrow, space or click): it moves the next\n\
+         piece of the picture in. The presenter window (press N) shows the current step and\n\
+         the next one.\n\n\
+         Generated from `src/slides.rs`: after changing a slide, run\n\
+         `C4_WRITE_NOTES=1 cargo test speaker_notes` to rewrite this file.\n",
+        (total + 30) / 60,
+        SLIDES.iter().map(|slide| slide.beats.len()).sum::<usize>(),
+    );
+    let mut start = 0;
+    for (index, slide) in SLIDES.iter().enumerate() {
+        out.push_str(&format!(
+            "\n## {}. {}  ({} s, starts at {}:{:02})\n\n",
+            index + 1,
+            slide.title,
+            slide.seconds(),
+            start / 60,
+            start % 60
+        ));
+        for (step, beat) in slide.beats.iter().enumerate() {
+            out.push_str(&format!("{}. {}\n", step + 1, beat.say));
+        }
+        start += slide.seconds();
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,28 +577,15 @@ mod tests {
     }
 
     #[test]
-    fn showcase_games_are_legal() {
+    fn board_games_are_legal() {
         for slide in SLIDES {
-            if let Visual::Board { columns, rows, moves } = slide.visual {
-                let mut heights = vec![0; columns as usize];
-                for &col in moves {
-                    heights[col as usize] += 1;
-                    assert!(heights[col as usize] <= rows, "{}: column {col} overflows", slide.title);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn growing_board_games_are_legal() {
-        for slide in SLIDES {
-            if let Visual::Expand(stages) = slide.visual {
+            if let Visual::Expand(stages) | Visual::Game(stages) = slide.visual {
                 let mut heights = vec![0; 16];
                 for stage in stages {
                     for &col in stage.moves {
-                        assert!(col < stage.columns);
+                        assert!(col < stage.columns, "{}", slide.title);
                         heights[col as usize] += 1;
-                        assert!(heights[col as usize] <= stage.rows);
+                        assert!(heights[col as usize] <= stage.rows, "{}: column {col} overflows", slide.title);
                     }
                 }
             }
@@ -446,7 +594,6 @@ mod tests {
 
     #[test]
     fn beats_line_up() {
-        assert_eq!(SLIDES.iter().map(|slide| slide.seconds).sum::<u32>(), 600);
         for slide in SLIDES {
             let beats = slide.beats.len();
             assert!(beats >= 1, "{}", slide.title);
@@ -454,11 +601,54 @@ mod tests {
                 assert!(!beat.say.contains('\u{2014}') && !beat.say.contains('\u{2013}'));
             }
             match &slide.visual {
-                Visual::Bars(bars) => assert!(bars.items.iter().all(|item| item.4 < beats), "{}", slide.title),
+                Visual::Bars(bars) => {
+                    for item in bars.items {
+                        assert!(item.beat < beats, "{}", slide.title);
+                        assert!(item.lit.is_none_or(|lit| lit >= item.beat && lit < beats), "{}", slide.title);
+                    }
+                }
                 Visual::Agents(list) => assert!(list.iter().all(|&beat| beat < beats)),
-                Visual::Expand(stages) => assert_eq!(stages.len(), beats),
-                _ => {}
+                Visual::Expand(stages) => assert_eq!(stages.len(), beats, "{}", slide.title),
+                Visual::Game(stages) => assert!(stages.len() == 1 && beats == 1, "{}: a game is one stage", slide.title),
+                Visual::Network => assert_eq!(beats, NETWORK_BEATS),
+                Visual::Solved => assert_eq!(beats, SOLVED_BEATS),
             }
         }
+    }
+
+    /// Every press of Next moves something: no beat only swaps a line of text.
+    #[test]
+    fn every_beat_moves_something() {
+        for slide in SLIDES {
+            for (beat, moves) in moving_beats(slide).into_iter().enumerate() {
+                assert!(moves, "{}: beat {} brings nothing new on screen", slide.title, beat + 1);
+            }
+        }
+    }
+
+    /// Each beat is about six seconds of talking (at most 26 words), except where
+    /// steps that would only drop discs were folded into one: there, at most three lots.
+    #[test]
+    fn beats_are_about_six_seconds() {
+        for slide in SLIDES {
+            for beat in slide.beats {
+                let words = beat.say.split_whitespace().count();
+                assert!((4..=3 * WORDS_PER_BEAT).contains(&words), "{}: {words} words in {:?}", slide.title, beat.say);
+            }
+            let long = slide.beats.iter().filter(|beat| beat.say.split_whitespace().count() > WORDS_PER_BEAT).count();
+            assert!(long <= 1, "{}: only one long step per slide", slide.title);
+        }
+    }
+
+    /// `SPEAKER_NOTES.md` matches the slides. `C4_WRITE_NOTES=1` rewrites it.
+    #[test]
+    fn speaker_notes_are_current() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/SPEAKER_NOTES.md");
+        let wanted = speaker_notes();
+        if std::env::var("C4_WRITE_NOTES").is_ok() {
+            std::fs::write(path, &wanted).expect("writes the notes");
+        }
+        let current = std::fs::read_to_string(path).unwrap_or_default().replace("\r\n", "\n");
+        assert_eq!(current, wanted, "SPEAKER_NOTES.md is stale: run C4_WRITE_NOTES=1 cargo test speaker_notes");
     }
 }

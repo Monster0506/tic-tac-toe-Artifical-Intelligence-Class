@@ -2,7 +2,7 @@
 //!
 //! The arena can show several boards at once ("tables"). Each table is an entity with
 //! a `Game` component that owns its own engine thread, so the same two agents play
-//! several matches side by side. Play, pause and step apply to every table, and every
+//! several matches side by side. Play and pause apply to every table, and every
 //! result goes into one shared score.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,7 +24,6 @@ const ANIMATE_FROM: f32 = 0.1;
 /// At very short move times the engine plays about a frame's worth of moves per request.
 const FRAME_SECONDS: f32 = 1.0 / 60.0;
 const MAX_BATCH: u16 = 16;
-pub const OPENINGS: [usize; 3] = [0, 4, 8];
 const OPENING_STAGGER: f32 = 0.12;
 /// Where unused pool discs wait: far below the table, out of every camera's view.
 const PARKED: Vec3 = Vec3::new(0.0, -200.0, 0.0);
@@ -76,11 +75,9 @@ pub enum Action {
     Shrink,
     Faster,
     Slower,
-    CycleOpening,
     MoreBoards,
     FewerBoards,
     PlayPause,
-    Step,
     Reset,
     /// Opens the presentation (see `present.rs`).
     Present,
@@ -94,7 +91,6 @@ pub struct Settings {
     pub agent: [usize; 2],
     pub size: usize,
     pub time: usize,
-    pub opening: usize,
     /// How many boards play at once.
     pub boards: usize,
 }
@@ -105,7 +101,6 @@ impl Default for Settings {
             agent: [DEFAULT_RED, DEFAULT_YELLOW],
             size: DEFAULT_SIZE,
             time: DEFAULT_TIME,
-            opening: 0,
             boards: 1,
         }
     }
@@ -182,7 +177,6 @@ pub struct Game {
     owed: u32,
     pub think_started: f32,
     pub finished_at: f32,
-    step: bool,
     start_paused: bool,
     pub outcome: Option<Outcome>,
     pub last: Option<(Player, u32, u128)>,
@@ -210,7 +204,6 @@ impl Game {
             owed: 0,
             think_started: 0.0,
             finished_at: 0.0,
-            step: false,
             start_paused: false,
             outcome: None,
             last: None,
@@ -350,7 +343,6 @@ impl Plugin for GamePlugin {
 fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut pending: ResMut<Pending>) {
     let bindings = [
         (KeyCode::Space, Action::PlayPause),
-        (KeyCode::KeyS, Action::Step),
         (KeyCode::KeyR, Action::Reset),
         (KeyCode::Equal, Action::Grow),
         (KeyCode::NumpadAdd, Action::Grow),
@@ -358,7 +350,6 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut pending: ResMut<Pending>) {
         (KeyCode::NumpadSubtract, Action::Shrink),
         (KeyCode::BracketRight, Action::Slower),
         (KeyCode::BracketLeft, Action::Faster),
-        (KeyCode::KeyO, Action::CycleOpening),
         (KeyCode::Period, Action::MoreBoards),
         (KeyCode::Comma, Action::FewerBoards),
         (KeyCode::KeyP, Action::Present),
@@ -421,7 +412,8 @@ fn start(commands: &mut Commands, settings: &Settings, game: &mut Game, paused: 
         size,
         red: ROSTER[settings.agent[0]].entrant,
         yellow: ROSTER[settings.agent[1]].entrant,
-        opening_stones: OPENINGS[settings.opening],
+        // Every match starts from an empty board.
+        opening_stones: 0,
         seed: clock_seed() ^ (u64::try_from(game.table).unwrap_or(0) << 48),
     }));
 }
@@ -465,7 +457,6 @@ fn handle_actions(
             }
             Action::Slower => settings.time = (settings.time + 1).min(TIMES.len() - 1),
             Action::Faster => settings.time = settings.time.saturating_sub(1),
-            Action::CycleOpening => settings.opening = (settings.opening + 1) % OPENINGS.len(),
             Action::MoreBoards => {
                 settings.boards = BOARD_COUNTS.iter().copied().find(|&count| count > settings.boards).unwrap_or(settings.boards);
             }
@@ -499,19 +490,6 @@ fn handle_actions(
                 } else {
                     // Space on the result screen stops the next matches from starting.
                     series.playing = false;
-                }
-            }
-            Action::Step => {
-                series.playing = false;
-                for mut game in &mut games {
-                    match game.phase {
-                        Phase::Idle | Phase::Finished => {
-                            start(&mut commands, &settings, &mut game, true);
-                            game.step = true;
-                        }
-                        Phase::Running => game.phase = Phase::Paused,
-                        Phase::Paused | Phase::Starting => game.step = !game.waiting,
-                    }
                 }
             }
             Action::Present => mode.set(Mode::Slides),
@@ -690,7 +668,7 @@ fn drive_engines(
         }
         // Wait for discs to land and for a resized board to finish changing shape.
         let landed = !morphing && !falling.iter().any(|disc| disc.table == game.table);
-        let wants_move = game.phase == Phase::Running || (game.phase == Phase::Paused && game.step);
+        let wants_move = game.phase == Phase::Running;
         if wants_move && !game.waiting && landed {
             let Some(engine) = game.engine.as_ref() else {
                 continue;
@@ -702,7 +680,6 @@ fn drive_engines(
             });
             game.owed = count;
             game.waiting = true;
-            game.step = false;
             game.think_started = time.elapsed_secs();
         }
     }

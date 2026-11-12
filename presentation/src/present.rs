@@ -22,7 +22,7 @@ use crate::roster::ROSTER;
 use crate::scene::{SceneAssets, Shape, board_parts, board_top, cell_x, cell_y, morph_shaped_board, spawn_shaped_board};
 use crate::sizes::BoardSize;
 use crate::slides::{Bars, SLIDES, Slide, Stage, Visual, solve_position, solved_columns};
-use crate::theme::{ACCENT, AQUA, BOARD, FAINT, GREEN, MUTED, RAISED, RED, TEXT, YELLOW, bold_font, title_font, ui_font};
+use crate::theme::{ACCENT, AQUA, BOARD, EMBER, FAINT, GREEN, MUTED, RAISED, RED, TEXT, YELLOW, bold_font, heat, title_font, ui_font};
 
 /// Where the slides are built, well away from the arena table.
 pub const STAGE: Vec3 = Vec3::new(0.0, 0.0, -140.0);
@@ -51,6 +51,8 @@ pub struct Deck {
     dirty: bool,
     /// Only the beats after `built_beat` need adding.
     stepped: bool,
+    /// Stepped back: only the pieces of the beats after `beat` need taking away.
+    unstepped: bool,
     /// +1 going forward, -1 going back: which way slides fly in and out.
     direction: f32,
     /// The live-solved position: `None` while the solver is still running.
@@ -87,13 +89,13 @@ impl Deck {
         }
     }
 
-    /// One step back: the previous beat (the slide is rebuilt as it was then), else the
-    /// previous slide at its last beat.
+    /// One step back: the previous beat (undoing exactly what the last press brought
+    /// in, the rest stays put), else the previous slide at its last beat.
     pub fn back(&mut self) {
         if self.beat > 0 {
             self.beat -= 1;
             self.direction = -1.0;
-            self.dirty = true;
+            self.unstepped = true;
         } else if self.index > 0 {
             let index = self.index - 1;
             self.go_to(index);
@@ -104,8 +106,13 @@ impl Deck {
 
 #[derive(Resource)]
 struct Palette {
+    /// The slide's accent: orange early in the talk, warming to deep red by the end.
     accent: Handle<StandardMaterial>,
+    /// White and unlit: shows a mesh's own vertex colours (the ember gradient) exactly.
+    ember: Handle<StandardMaterial>,
+
     bar: Handle<StandardMaterial>,
+    good: Handle<StandardMaterial>,
     tile: Handle<StandardMaterial>,
     layer: Handle<StandardMaterial>,
     families: [Handle<StandardMaterial>; 5],
@@ -132,7 +139,7 @@ impl Face {
     /// Rough average glyph width in ems, for fitting a line into a width.
     const fn width(self) -> f32 {
         match self {
-            Self::Serif => 0.47,
+            Self::Serif => 0.56,
             Self::Sans => 0.5,
             Self::Bold => 0.53,
         }
@@ -202,11 +209,17 @@ struct SlideText {
     label: Entity,
     /// The last beat this line belongs to; it leaves when the slide steps past it.
     until: Option<usize>,
+    /// The beat that brought it in.
+    step: usize,
 }
 
 /// A piece that leaves when the slide steps past this beat.
 #[derive(Component)]
 struct Until(usize);
+
+/// The beat that brought a piece in: stepping back before it takes it away.
+#[derive(Component, Clone, Copy)]
+struct Step(usize);
 
 /// The growing board: which stage it shows and what it has in it.
 #[derive(Component)]
@@ -338,10 +351,18 @@ fn material(materials: &mut Assets<StandardMaterial>, colour: Color, glow: f32) 
 }
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let ember = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        unlit: true,
+        ..default()
+    });
     let mut make = |colour: Color, glow: f32| material(&mut materials, colour, glow);
     let palette = Palette {
-        accent: make(ACCENT, 0.45),
+        // Little glow, so the orange reads as the palette's #ff922f on the cream stage.
+        accent: make(ACCENT, 0.12),
+        ember,
         bar: make(MUTED.mix(&RAISED, 0.55), 0.1),
+        good: make(GREEN, 0.1),
         tile: make(RAISED, 0.05),
         layer: make(BOARD.mix(&AQUA, 0.35), 0.15),
         families: [make(ACCENT, 0.4), make(YELLOW, 0.4), make(AQUA, 0.4), make(GREEN, 0.4), make(FAINT, 0.3)],
@@ -379,7 +400,10 @@ fn enter(mut deck: ResMut<Deck>) {
     deck.dirty = true;
 }
 
-fn leave(mut commands: Commands, items: Query<Entity, Or<(With<SlideItem>, With<SlideText>)>>) {
+fn leave(
+    mut commands: Commands,
+    items: Query<Entity, Or<(With<SlideItem>, With<SlideText>)>>,
+) {
     for entity in &items {
         commands.entity(entity).despawn();
     }
@@ -400,7 +424,7 @@ fn navigate(
         .any(|&key| keys.just_pressed(key));
     if keys.just_pressed(KeyCode::Escape) {
         mode.set(Mode::Arena);
-    } else if keys.just_pressed(KeyCode::Home) {
+    } else if keys.just_pressed(KeyCode::Home) || keys.just_pressed(KeyCode::KeyR) {
         deck.go_to(0);
     } else if next {
         if !deck.next() {
@@ -426,6 +450,8 @@ struct Builder<'a, 'w, 's> {
     assets: &'a SceneAssets,
     /// Which side new pieces sweep in from.
     side: f32,
+    /// This slide's accent: `heat` of how far into the talk it is.
+    accent: Color,
     /// The beats being built this time (all of them up to `to` on a fresh slide, just
     /// the new ones when stepping).
     from: usize,
@@ -433,17 +459,23 @@ struct Builder<'a, 'w, 's> {
     /// The beat the next pieces belong to, and the last beat they stay for.
     beat: usize,
     until: Option<usize>,
+    /// Stepping back from this beat to `to`: only the pieces that left on the way
+    /// forward (they belong to `to` but not to this beat) come back.
+    restore: Option<usize>,
 }
 
 impl Builder<'_, '_, '_> {
     /// Whether pieces for `beat` go up now.
     fn shows(&self) -> bool {
-        (self.from..=self.to).contains(&self.beat) && self.until.is_none_or(|until| until >= self.to)
+        match self.restore {
+            Some(old) => self.beat <= self.to && self.until.is_some_and(|until| until >= self.to && until < old),
+            None => (self.from..=self.to).contains(&self.beat) && self.until.is_none_or(|until| until >= self.to),
+        }
     }
 
     /// Delay for something revealed on a step: quick, since the slide is already up.
     fn soon(&self, fresh: f32, step: f32) -> f32 {
-        if self.from == 0 { fresh } else { step }
+        if self.from == 0 && self.restore.is_none() { fresh } else { step }
     }
 
     /// Spawns a line of 2D text pinned at `at` on the stage; it fades in after `delay`.
@@ -463,7 +495,7 @@ impl Builder<'_, '_, '_> {
                 TextFont {
                     font: spec.face.source(),
                     font_size: FontSize::Px(1.0),
-                    weight: if spec.face == Face::Serif { FontWeight::THIN } else { FontWeight::default() },
+                    weight: FontWeight::default(),
                     ..default()
                 },
                 TextColor(colour.with_alpha(0.0)),
@@ -491,6 +523,7 @@ impl Builder<'_, '_, '_> {
                     leaving: None,
                     label,
                     until: self.until,
+                    step: self.beat,
                 },
                 Node {
                     position_type: PositionType::Absolute,
@@ -509,7 +542,7 @@ impl Builder<'_, '_, '_> {
         let mesh = self.meshes.add(mesh);
         let mut entity = self
             .commands
-            .spawn((SlideItem, appear_at(STAGE + at, delay, self.side), Mesh3d(mesh), MeshMaterial3d(material.clone())));
+            .spawn((SlideItem, Step(self.beat), appear_at(STAGE + at, delay, self.side), Mesh3d(mesh), MeshMaterial3d(material.clone())));
         if let Some(until) = self.until {
             entity.insert(Until(until));
         }
@@ -542,6 +575,7 @@ impl Builder<'_, '_, '_> {
         let top = board_top(size) + 1.5;
         let mut root = self.commands.spawn((
             SlideItem,
+            Step(self.beat),
             appear_at(STAGE + base, delay, self.side),
             Transform::from_translation(STAGE + base).with_scale(Vec3::splat(scale)),
             Visibility::default(),
@@ -595,18 +629,23 @@ fn build_slide(
     mut deck: ResMut<Deck>,
     mut kick: ResMut<Kick>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     palette: Res<Palette>,
     assets: Res<SceneAssets>,
-    old: Query<(Entity, &Transform, Option<&Until>), (With<SlideItem>, Without<Leaving>)>,
+    old: Query<(Entity, &Transform, Option<&Until>, Option<&Step>), (With<SlideItem>, Without<Leaving>)>,
     mut old_text: Query<&mut SlideText>,
 ) {
-    let full = deck.dirty;
-    if !full && !deck.stepped {
+    // Forward and back in the same frame: just build the slide as it now stands.
+    let full = deck.dirty || (deck.stepped && deck.unstepped);
+    let back = !full && deck.unstepped;
+    if !full && !back && !deck.stepped {
         return;
     }
     deck.dirty = false;
     deck.stepped = false;
-    let (from, to) = if full { (0, deck.beat) } else { (deck.built_beat + 1, deck.beat) };
+    deck.unstepped = false;
+    let old_beat = deck.built_beat;
+    let (from, to) = if full || back { (if full { 0 } else { deck.beat }, deck.beat) } else { (deck.built_beat + 1, deck.beat) };
     deck.built_beat = deck.beat;
     if from > to {
         return;
@@ -614,9 +653,16 @@ fn build_slide(
     // A new slide gets the full push-in and flash; a step gets a small nudge.
     kick.0 = if full { 0.0 } else { kick.0.max(0.3) };
     // On a new slide everything old flies out the way we are going; on a step only the
-    // pieces whose beat is over do.
-    for (entity, transform, until) in &old {
-        if full || until.is_some_and(|until| until.0 < to) {
+    // pieces whose beat is over do; on a step back only what the undone beats brought.
+    let goes = |until: Option<usize>, step: Option<usize>| {
+        if back {
+            step.is_some_and(|step| step > to)
+        } else {
+            full || until.is_some_and(|until| until < to)
+        }
+    };
+    for (entity, transform, until, step) in &old {
+        if goes(until.map(|until| until.0), step.map(|step| step.0)) {
             commands.entity(entity).remove::<(Appear, Grow)>().insert(Leaving {
                 age: 0.0,
                 from: transform.translation,
@@ -626,12 +672,19 @@ fn build_slide(
         }
     }
     for mut text in &mut old_text {
-        if text.leaving.is_none() && (full || text.until.is_some_and(|until| until < to)) {
+        if text.leaving.is_none() && goes(text.until, Some(text.step)) {
             text.leaving = Some(0.0);
             text.side = deck.direction;
         }
     }
     let slide = &SLIDES[deck.index];
+    // The talk heats up: the accent runs from orange on the first slide to deep red on
+    // the last. The shared accent material follows the slide being built.
+    let accent = slide_heat(deck.index);
+    if let Some(mut material) = materials.get_mut(&palette.accent) {
+        material.base_color = accent;
+        material.emissive = accent.to_linear() * 0.12;
+    }
     let solved = deck.solved.lock().ok().and_then(|slot| slot.clone());
     deck.waiting_for_solve = matches!(slide.visual, Visual::Solved) && solved.is_none();
     let mut builder = Builder {
@@ -640,17 +693,19 @@ fn build_slide(
         palette: &palette,
         assets: &assets,
         side: deck.direction,
+        accent,
         from,
         to,
         beat: 0,
         until: None,
+        restore: back.then_some(old_beat),
     };
     frame(&mut builder, slide, deck.index);
     builder.beat = 0;
     builder.until = None;
     match &slide.visual {
-        Visual::Board { columns, rows, moves } => showcase(&mut builder, *columns, *rows, moves),
-        Visual::Expand(stages) => expand(&mut builder, stages),
+        Visual::Expand(stages) => expand(&mut builder, stages, Layout::BESIDE),
+        Visual::Game(stages) => expand(&mut builder, stages, Layout::centred(stages)),
         Visual::Bars(bars) => bar_chart(&mut builder, bars),
         Visual::Agents(beats) => agents(&mut builder, beats),
         Visual::Network => network(&mut builder),
@@ -661,11 +716,13 @@ fn build_slide(
 /// The words on every slide: a small kicker, the title, a rule and the page number.
 /// Everything else is said aloud (see the speaker notes).
 fn frame(builder: &mut Builder<'_, '_, '_>, slide: &Slide, index: usize) {
-    let accent = builder.palette.accent.clone();
     let title_y = 6.4;
-    builder.text(&Spec::new(slide.kicker, Face::Bold, 0.5).align(Align::Center), ACCENT, Vec2::new(0.0, 8.3), 0.0);
+    let ink = builder.accent;
+    builder.text(&Spec::new(slide.kicker, Face::Bold, 0.5).align(Align::Center), ink, Vec2::new(0.0, 8.3), 0.0);
     builder.text(&Spec::new(slide.title, Face::Serif, 1.45).align(Align::Center).fit(32.0), TEXT, Vec2::new(0.0, title_y), 0.05);
-    builder.block(Cuboid::new(3.0, 0.07, 0.07).into(), &accent, Vec3::new(0.0, title_y - 0.75, 0.0), 0.15);
+    // The rule under the title: the whole ember gradient, orange to deep red.
+    let ember = builder.palette.ember.clone();
+    builder.block(ember_mesh(Vec3::new(3.6, 0.08, 0.08), ACCENT, EMBER), &ember, Vec3::new(0.0, title_y - 0.75, 0.0), 0.15);
     let page = format!("{} / {}", index + 1, SLIDES.len());
     builder.text(&Spec::new(&page, Face::Sans, 0.4).align(Align::Right), FAINT, Vec2::new(16.8, -9.1), 0.3);
     // One dot per beat over the page number; they fill in as the slide steps on.
@@ -686,35 +743,64 @@ fn frame(builder: &mut Builder<'_, '_, '_>, slide: &Slide, index: usize) {
         builder.beat = step;
         builder.until = Some(step);
         let delay = builder.soon(0.7, 0.25);
-        builder.text(&Spec::new(beat.caption, Face::Bold, 0.62).align(Align::Center).fit(30.0), ACCENT, Vec2::new(0.0, -8.9), delay);
+        builder.text(&Spec::new(beat.caption, Face::Bold, 0.62).align(Align::Center).fit(30.0), ink, Vec2::new(0.0, -8.9), delay);
     }
 }
 
-fn showcase(builder: &mut Builder<'_, '_, '_>, columns: u32, rows: u32, moves: &[u32]) {
-    let size = BoardSize { columns, rows, label: "" };
-    let scale = (12.6 / (board_top(size) + 0.6)).min(28.0 / (f32_of(columns) + 1.0));
-    builder.board(size, Vec3::new(0.0, -8.6, 0.0), scale, moves, 0.2, true);
+/// Where a growing board stands, how big, and whether its size is written beside it.
+#[derive(Clone, Copy)]
+struct Layout {
+    base: Vec3,
+    scale: f32,
+    labels: bool,
+    /// Seconds between discs as the board fills.
+    gap: f32,
 }
 
-/// One board that grows a column and a row at a time, with its size written beside it.
-fn expand(builder: &mut Builder<'_, '_, '_>, stages: &'static [Stage]) {
+impl Layout {
+    /// The board on the left, its size written large on the right.
+    const BESIDE: Self = Self {
+        base: Vec3::new(-3.8, -8.1, 0.0),
+        scale: 1.2,
+        labels: true,
+        gap: 0.12,
+    };
+
+    /// One board in the middle, as big as fits under the title.
+    fn centred(stages: &[Stage]) -> Self {
+        let (columns, rows) = stages.last().map_or((7, 6), |stage| (stage.columns, stage.rows));
+        let size = BoardSize { columns, rows, label: "" };
+        Self {
+            // High enough that a caption under it stays clear of the feet.
+            base: Vec3::new(0.0, -7.6, 0.0),
+            scale: (11.4 / (board_top(size) + 0.6)).min(26.0 / (f32_of(columns) + 1.0)),
+            labels: false,
+            // The game plays itself out, a disc at a time, at about a player's pace.
+            gap: 0.45,
+        }
+    }
+}
+
+/// One board that grows a column and a row at a time (or just takes more discs), with
+/// its size written beside it when the layout has room.
+fn expand(builder: &mut Builder<'_, '_, '_>, stages: &'static [Stage], layout: Layout) {
     let Some(last) = stages.len().checked_sub(1) else {
         return;
     };
     let shown = builder.to.min(last);
-    let base = Vec3::new(-3.8, -8.1, 0.0);
-    let scale = 1.2;
+    let (base, scale) = (layout.base, layout.scale);
     let size_of = |stage: &Stage| BoardSize {
         columns: stage.columns,
         rows: stage.rows,
         label: "",
     };
-    if builder.from == 0 {
+    if builder.from == 0 && builder.restore.is_none() {
         let size = size_of(&stages[shown]);
         let root = builder
             .commands
             .spawn((
                 SlideItem,
+                Step(0),
                 appear_at(STAGE + base, 0.2, builder.side),
                 Transform::from_translation(STAGE + base).with_scale(Vec3::splat(scale)),
                 Visibility::default(),
@@ -735,13 +821,16 @@ fn expand(builder: &mut Builder<'_, '_, '_>, stages: &'static [Stage]) {
             played: 0,
         };
         let mut delay = 0.55;
-        for stage in &stages[..=shown] {
+        for (step, stage) in stages[..=shown].iter().enumerate() {
             for &col in stage.moves {
-                drop_stage_disc(builder.commands, builder.assets, root, &mut growing, size, col, delay);
-                delay += 0.12;
+                drop_stage_disc(builder.commands, builder.assets, root, &mut growing, size, (col, step), delay);
+                delay += layout.gap;
             }
         }
         builder.commands.entity(root).insert(growing);
+    }
+    if !layout.labels {
+        return;
     }
     // The size, big, to the right of the board; it changes as the board grows.
     let x = 4.4;
@@ -749,7 +838,7 @@ fn expand(builder: &mut Builder<'_, '_, '_>, stages: &'static [Stage]) {
         builder.beat = step;
         builder.until = (step < last).then_some(step);
         let delay = builder.soon(0.45, 1.0);
-        let ink = if step == last || stage.columns == 9 { ACCENT } else { TEXT };
+        let ink = if step == last || stage.columns == 9 { builder.accent } else { TEXT };
         builder.text(&Spec::new(stage.name, Face::Serif, 2.6), ink, Vec2::new(x, 0.9), delay);
         for (line, text) in stage.note.lines().enumerate() {
             let y = -0.6 - f32_of(u32::try_from(line).unwrap_or(0)) * 0.95;
@@ -766,7 +855,7 @@ fn drop_stage_disc(
     root: Entity,
     growing: &mut Growing,
     size: BoardSize,
-    col: u32,
+    (col, step): (u32, usize),
     delay: f32,
 ) {
     let Some(height) = growing.heights.get_mut(usize::try_from(col).unwrap_or(usize::MAX)) else {
@@ -781,6 +870,7 @@ fn drop_stage_disc(
     growing.played += 1;
     commands.spawn((
         StageDisc { col },
+        Step(step),
         Mesh3d(assets.disc.clone()),
         MeshMaterial3d(assets.solid[player].clone()),
         Transform::from_xyz(0.0, board_top(size) + 1.5, 0.0).with_rotation(Quat::from_rotation_x(FRAC_PI_2)),
@@ -796,15 +886,55 @@ fn drop_stage_disc(
 
 /// When the deck steps on, the growing board morphs to the next stage (the arena's
 /// resize: the frame slides out as new columns unfold, then the top rises as new rows
-/// grow in), then that stage's discs drop.
+/// grow in), then that stage's discs drop. Stepping back undoes it: the later stages'
+/// discs fly out and the board shrinks back.
 fn grow_stage(
     mut commands: Commands,
     deck: Res<Deck>,
     assets: Res<SceneAssets>,
     mut roots: Query<(Entity, &mut Growing, &Shape), Without<Leaving>>,
+    discs: Query<(Entity, &Step, &ChildOf, &Transform), With<StageDisc>>,
 ) {
     for (root, mut growing, shape) in &mut roots {
-        if deck.beat <= growing.shown {
+        if deck.beat < growing.shown {
+            let target = deck.beat;
+            for (disc, step, parent, transform) in &discs {
+                if parent.parent() == root && step.0 > target {
+                    commands.entity(disc).remove::<(Drop, StageDisc)>().insert(Leaving {
+                        age: 0.0,
+                        from: transform.translation,
+                        scale: transform.scale,
+                        side: -1.0,
+                    });
+                }
+            }
+            let stage = &growing.stages[target];
+            let size = BoardSize {
+                columns: stage.columns,
+                rows: stage.rows,
+                label: "",
+            };
+            if size.columns != growing.cells.columns || size.rows != growing.cells.rows {
+                morph_shaped_board(&mut commands, &assets, root, (shape.w, shape.h), growing.cells, size);
+                growing.cells = size;
+            }
+            // What is left on the board: the discs of the stages up to `target`.
+            growing.heights = [0; 16];
+            growing.played = 0;
+            for stage in &growing.stages[..=target] {
+                for &col in stage.moves {
+                    if let Some(height) = growing.heights.get_mut(usize::try_from(col).unwrap_or(usize::MAX)) {
+                        if *height < stage.rows {
+                            *height += 1;
+                            growing.played += 1;
+                        }
+                    }
+                }
+            }
+            growing.shown = target;
+            continue;
+        }
+        if deck.beat == growing.shown {
             continue;
         }
         let last = growing.stages.len().saturating_sub(1);
@@ -823,7 +953,7 @@ fn grow_stage(
                 delay = 1.4;
             }
             for &col in stage.moves {
-                drop_stage_disc(&mut commands, &assets, root, &mut growing, size, col, delay);
+                drop_stage_disc(&mut commands, &assets, root, &mut growing, size, (col, step), delay);
                 delay += 0.3;
             }
         }
@@ -841,7 +971,7 @@ fn place_stage_discs(roots: Query<&Shape, With<Growing>>, mut discs: Query<(&Sta
 }
 
 fn bar_chart(builder: &mut Builder<'_, '_, '_>, bars: &Bars) {
-    let (accent, plain) = (builder.palette.accent.clone(), builder.palette.bar.clone());
+    let plain = builder.palette.bar.clone();
     let label_right = -5.0;
     let start = -4.4;
     let full = 15.5;
@@ -852,39 +982,64 @@ fn bar_chart(builder: &mut Builder<'_, '_, '_>, bars: &Bars) {
     builder.text(&Spec::new(bars.caption, Face::Sans, 0.48).align(Align::Center), FAINT, Vec2::new(0.0, 4.75), 0.2);
     let mut y = 4.0 - thickness / 2.0;
     let mut in_beat = [0_u32; 16];
-    for &(label, value, shown, highlight, beat) in bars.items {
-        builder.beat = beat;
-        let rank = in_beat.get_mut(beat).map_or(0, |count| {
+    for item in bars.items {
+        let share = ((item.value - bars.floor) / (bars.ceiling - bars.floor)).clamp(0.015, 1.0);
+        let length = share * full;
+        let text_y = y - label_size * 0.36;
+        builder.beat = item.beat;
+        let rank = in_beat.get_mut(item.beat).map_or(0, |count| {
             *count += 1;
             *count - 1
         });
         let delay = builder.soon(0.35, 0.1) + f32_of(rank) * 0.15;
-        if !builder.shows() {
-            y -= spacing;
-            continue;
+        let lit_now = item.lit == Some(item.beat);
+        let later = item.lit.filter(|&lit| lit > item.beat);
+        let value_at = Vec2::new(start + length + 0.35, text_y);
+        if builder.shows() {
+            builder.text(&Spec::new(item.label, Face::Sans, label_size).align(Align::Right).fit(10.5), MUTED, Vec2::new(label_right, text_y), delay);
+            let fill = if lit_now { None } else { Some(plain.clone()) };
+            spawn_bar(builder, fill, Vec3::new(start, y, 0.0), Vec3::new(1.0, thickness, 0.6), length, delay);
         }
-        let share = ((value - bars.floor) / (bars.ceiling - bars.floor)).clamp(0.015, 1.0);
-        let length = share * full;
-        let text_y = y - label_size * 0.36;
-        builder.text(&Spec::new(label, Face::Sans, label_size).align(Align::Right).fit(10.5), MUTED, Vec2::new(label_right, text_y), delay);
-        let fill = if highlight { accent.clone() } else { plain.clone() };
-        let mesh = builder.meshes.add(Cuboid::new(1.0, thickness, 0.6));
-        builder.commands.spawn((
-            SlideItem,
-            Mesh3d(mesh),
-            MeshMaterial3d(fill),
-            Transform::from_translation(STAGE + Vec3::new(start, y, 0.0)).with_scale(Vec3::new(0.001, 1.0, 1.0)),
-            Grow {
-                start,
-                length,
-                delay,
-                age: 0.0,
-            },
-        ));
-        let ink = if highlight { ACCENT } else { TEXT };
-        builder.text(&Spec::new(shown, Face::Bold, label_size), ink, Vec2::new(start + length + 0.35, text_y), delay + 0.45);
+        // The value: orange if the bar is lit; a bar lit later shows it in plain ink
+        // until then, when it swaps for an orange one.
+        builder.until = later.map(|lit| lit - 1);
+        let ink = if lit_now { builder.accent } else { TEXT };
+        builder.text(&Spec::new(item.text, Face::Bold, label_size), ink, value_at, delay + 0.45);
+        builder.until = None;
+        // Lighting a bar up later: orange sweeps along it, a touch proud of the grey.
+        if let Some(lit) = later {
+            builder.beat = lit;
+            if builder.shows() {
+                let sweep = builder.soon(0.9, 0.15);
+                spawn_bar(builder, None, Vec3::new(start, y, 0.0), Vec3::new(1.0, thickness * 1.1, 0.66), length, sweep);
+                builder.text(&Spec::new(item.text, Face::Bold, label_size), builder.accent, value_at, sweep + 0.5);
+            }
+        }
         y -= spacing;
     }
+}
+
+/// A bar that grows from `at` along x to `length`: in `fill`, or with `None` lit up in
+/// the ember gradient (orange at its root, the slide's red at its tip).
+fn spawn_bar(builder: &mut Builder<'_, '_, '_>, fill: Option<Handle<StandardMaterial>>, at: Vec3, size: Vec3, length: f32, delay: f32) {
+    let (mesh, fill) = match fill {
+        Some(fill) => (Mesh::from(Cuboid::new(size.x, size.y, size.z)), fill),
+        None => (ember_mesh(size, ACCENT, builder.accent.mix(&EMBER, 0.5)), builder.palette.ember.clone()),
+    };
+    let mesh = builder.meshes.add(mesh);
+    builder.commands.spawn((
+        SlideItem,
+        Step(builder.beat),
+        Mesh3d(mesh),
+        MeshMaterial3d(fill),
+        Transform::from_translation(STAGE + at).with_scale(Vec3::new(0.001, 1.0, 1.0)),
+        Grow {
+            start: at.x,
+            length,
+            delay,
+            age: 0.0,
+        },
+    ));
 }
 
 fn family_index(family: &str) -> usize {
@@ -960,6 +1115,74 @@ fn network(builder: &mut Builder<'_, '_, '_>) {
         let delay = builder.soon(1.0, 0.5);
         builder.text(&Spec::new(caption, Face::Bold, 0.58).align(Align::Center), MUTED, Vec2::new(x, -6.6), delay);
     }
+    // Its move: the top-scoring column gets played on the board it looked at.
+    builder.beat = 3;
+    let delay = builder.soon(1.6, 0.2);
+    play_disc(builder, size, Vec3::new(-11.5, -4.6, 0.0), 0.9, &[3, 4, 3, 3, 4, 2, 5, 5, 2], 3, delay);
+    // Guiding search: a tree grows above the scores, its best line in orange.
+    builder.beat = 4;
+    let start = builder.soon(1.8, 0.15);
+    search_tree(builder, Vec2::new(10.55, 4.5), start);
+}
+
+/// Drops the next disc of a game (`moves` so far) into `col` of a board standing at
+/// `base` with `scale`, as a separate piece that lands in the right cell.
+#[allow(clippy::too_many_arguments)]
+fn play_disc(builder: &mut Builder<'_, '_, '_>, size: BoardSize, base: Vec3, scale: f32, moves: &[u32], col: u32, delay: f32) {
+    if !builder.shows() {
+        return;
+    }
+    let row = u32::try_from(moves.iter().filter(|&&played| played == col).count()).unwrap_or(0);
+    if row >= size.rows {
+        return;
+    }
+    let player = moves.len() % 2;
+    let x = base.x + cell_x(size, col) * scale;
+    let top = base.y + (board_top(size) + 1.5) * scale;
+    builder.commands.spawn((
+        SlideItem,
+        Step(builder.beat),
+        Mesh3d(builder.assets.disc.clone()),
+        MeshMaterial3d(builder.assets.solid[player].clone()),
+        Transform::from_translation(STAGE + Vec3::new(x, top, base.z))
+            .with_rotation(Quat::from_rotation_x(FRAC_PI_2))
+            .with_scale(Vec3::splat(scale)),
+        Drop {
+            rest: STAGE.y + base.y + cell_y(row) * scale,
+            delay,
+            velocity: 0.0,
+        },
+        Visibility::Hidden,
+    ));
+}
+
+/// A small search tree that pops in level by level: the root, three moves, two replies
+/// each. The middle line (the network's favourite) is orange.
+fn search_tree(builder: &mut Builder<'_, '_, '_>, root: Vec2, start: f32) {
+    let (accent, plain) = (builder.palette.accent.clone(), builder.palette.bar.clone());
+    let mut nodes = vec![(root, None::<Vec2>, true, start)];
+    for (branch, dx) in [-1.95_f32, 0.0, 1.95].into_iter().enumerate() {
+        let middle = root + Vec2::new(dx, -1.0);
+        let best = branch == 1;
+        nodes.push((middle, Some(root), best, start + 0.25 + f32_of(u32::try_from(branch).unwrap_or(0)) * 0.08));
+        for (leaf, lx) in [-0.55_f32, 0.55].into_iter().enumerate() {
+            let at = middle + Vec2::new(lx, -0.95);
+            nodes.push((at, Some(middle), best && leaf == 0, start + 0.55 + f32_of(u32::try_from(branch * 2 + leaf).unwrap_or(0)) * 0.06));
+        }
+    }
+    for (at, parent, best, delay) in nodes {
+        let fill = if best { accent.clone() } else { plain.clone() };
+        let radius = if parent.is_none() { 0.3 } else { 0.22 };
+        builder.block(Sphere::new(radius).into(), &fill, at.extend(0.2), delay);
+        if let Some(from) = parent {
+            let span = at - from;
+            let link = builder.block(Cylinder::new(0.05, span.length()).into(), &fill, ((at + from) / 2.0).extend(0.1), delay - 0.05);
+            if let Some(link) = link {
+                let turn = Quat::from_rotation_arc(Vec3::Y, span.extend(0.0).normalize());
+                builder.commands.entity(link).insert(Transform::from_rotation(turn));
+            }
+        }
+    }
 }
 
 fn solved_board(builder: &mut Builder<'_, '_, '_>, columns: Option<Vec<Option<Outcome>>>) {
@@ -969,16 +1192,41 @@ fn solved_board(builder: &mut Builder<'_, '_, '_>, columns: Option<Vec<Option<Ou
         label: "",
     };
     let moves = solved_columns();
-    let scale = 1.35;
-    let base = Vec3::new(0.0, -7.9, 0.0);
+    let scale = 1.3;
+    let base = Vec3::new(-7.0, -7.9, 0.0);
     builder.beat = 0;
     builder.board(size, base, scale, &moves, 0.2, false);
     builder.beat = 1;
     let start = builder.soon(1.9, 0.1);
     let label_y = base.y + (board_top(size) + 0.5) * scale;
     let mover = if moves.len() % 2 == 0 { "red" } else { "yellow" };
+    // The checks: two green bars that fill all the way, every position right.
+    builder.beat = 3;
+    let checks = builder.soon(0.6, 0.1);
+    let good = builder.palette.good.clone();
+    for (row, (label, delay)) in [("UCI dataset: 67,557 positions", checks), ("Pascal Pons' tests: 6,000 positions", checks + 0.35)]
+        .into_iter()
+        .enumerate()
+    {
+        let y = 0.6 - f32_of(u32::try_from(row).unwrap_or(0)) * 3.2;
+        if builder.shows() {
+            builder.text(&Spec::new(label, Face::Sans, 0.55), MUTED, Vec2::new(2.0, y + 0.95), delay);
+            spawn_bar(builder, Some(good.clone()), Vec3::new(2.0, y, 0.0), Vec3::new(1.0, 1.0, 0.6), 11.5, delay);
+            builder.text(&Spec::new("100%", Face::Bold, 0.6), GREEN, Vec2::new(13.85, y - 0.22), delay + 0.9);
+        }
+    }
     match columns {
         Some(columns) => {
+            // The winning move (or failing that a drawing one) gets played.
+            let best = [Outcome::Win, Outcome::Draw]
+                .iter()
+                .find_map(|wanted| columns.iter().position(|outcome| outcome.as_ref() == Some(wanted)));
+            if let Some(col) = best {
+                builder.beat = 2;
+                let delay = builder.soon(2.6, 0.2);
+                play_disc(builder, size, base, scale, &moves, u32::try_from(col).unwrap_or(0), delay);
+                builder.beat = 1;
+            }
             for (col, outcome) in columns.iter().enumerate() {
                 let Some(outcome) = outcome else { continue };
                 let (letter, index) = match outcome {
@@ -997,6 +1245,27 @@ fn solved_board(builder: &mut Builder<'_, '_, '_>, columns: Option<Vec<Option<Ou
             builder.text(&Spec::new("solving...", Face::Sans, 0.55).align(Align::Center), FAINT, Vec2::new(base.x, label_y), 0.5);
         }
     }
+}
+
+/// How far into the talk a slide is, as the ember gradient: orange first, deep red last.
+fn slide_heat(index: usize) -> Color {
+    let last = SLIDES.len().saturating_sub(1).max(1);
+    heat(f32_of(u32::try_from(index).unwrap_or(0)) / f32_of(u32::try_from(last).unwrap_or(1)))
+}
+
+/// A box whose vertex colours run from `from` at its left end to `to` at its right;
+/// shown with the unlit `Palette::ember` material, it is a gradient.
+fn ember_mesh(size: Vec3, from: Color, to: Color) -> Mesh {
+    let mut mesh = Mesh::from(Cuboid::new(size.x, size.y, size.z));
+    let colours: Vec<[f32; 4]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(positions)) => positions
+            .iter()
+            .map(|position| from.mix(&to, (position[0] / size.x + 0.5).clamp(0.0, 1.0)).to_linear().to_f32_array())
+            .collect(),
+        _ => Vec::new(),
+    };
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
+    mesh
 }
 
 fn f32_of(value: u32) -> f32 {

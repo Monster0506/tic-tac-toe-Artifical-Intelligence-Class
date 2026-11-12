@@ -45,8 +45,8 @@ pub struct UiMargins {
 impl Default for UiMargins {
     fn default() -> Self {
         Self {
-            left: 330.0,
-            right: 330.0,
+            left: 26.0,
+            right: 26.0,
             top: 110.0,
             bottom: 200.0,
         }
@@ -54,11 +54,18 @@ impl Default for UiMargins {
 }
 
 
+/// How much brighter than the palette the wallpaper is drawn, to make up for tonemapping.
+const WALLPAPER_LIFT: f32 = 1.0;
+/// The scene camera's exposure (Bevy's default is 9.7).
+const EXPOSURE_EV100: f32 = 10.7;
+
 pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(BG))
+        // The wallpaper passes through tonemapping, which greys it; lift it so it lands on
+        // the palette's cream.
+        app.insert_resource(ClearColor(Color::from(BG.to_linear() * WALLPAPER_LIFT)))
             .init_resource::<UiMargins>()
             .insert_resource(GlobalAmbientLight {
                 color: Color::srgb(1.0, 0.9, 0.78),
@@ -205,6 +212,10 @@ struct OrbitCamera {
     target: Vec3,
     /// Extra pitch for several rows of boards, eased in.
     lift: f32,
+    /// How far the view has been dragged sideways and up (right-drag), in world units.
+    pan: Vec3,
+    /// Which drag started on the scene (not on the UI): left orbits, right pans.
+    drag: Option<MouseButton>,
 }
 
 fn index(player: Player) -> usize {
@@ -404,6 +415,12 @@ fn setup(
         // The flat UI draws on this camera, not the 3D HUD's (which is off in backup mode).
         IsDefaultUiCamera,
         Msaa::Off,
+        // No tonemapping: the light theme wants the palette's exact cream and #ff922f,
+        // and tonemapping greys and desaturates them.
+        bevy::render::view::Tonemapping::None,
+        // One stop darker than the default, so lit surfaces stay below white without
+        // tonemapping to compress them.
+        bevy::camera::Exposure { ev100: EXPOSURE_EV100 },
         Fxaa::default(),
         // Soft bloom so glows, flashes and the win beam really shine.
         Bloom {
@@ -418,6 +435,8 @@ fn setup(
             distance: 18.0,
             target: Vec3::new(0.0, 4.0, 0.0),
             lift: 0.0,
+            pan: Vec3::ZERO,
+            drag: None,
         },
     ));
 }
@@ -995,6 +1014,8 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     margins: Res<UiMargins>,
+    hovers: Res<bevy::picking::hover::HoverMap>,
+    ui_nodes: Query<(), With<ComputedNode>>,
     mut cameras: Query<(&mut OrbitCamera, &mut Transform)>,
 ) {
     let Ok(window) = windows.single() else {
@@ -1003,9 +1024,31 @@ fn orbit_camera(
     let Ok((mut orbit, mut transform)) = cameras.single_mut() else {
         return;
     };
-    if buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle) {
+    // A drag belongs to the scene only if it started off the UI, so clicking a button
+    // or dragging across a panel never moves the camera.
+    let over_ui = hovers
+        .get(&bevy::picking::pointer::PointerId::Mouse)
+        .is_some_and(|hits| hits.keys().any(|&entity| ui_nodes.contains(entity)));
+    for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
+        if buttons.just_pressed(button) && orbit.drag.is_none() && !over_ui {
+            orbit.drag = Some(button);
+        }
+    }
+    if orbit.drag.is_some_and(|button| !buttons.pressed(button)) {
+        orbit.drag = None;
+    }
+    let rotate = orbit.drag == Some(MouseButton::Left);
+    let pan = matches!(orbit.drag, Some(MouseButton::Right | MouseButton::Middle));
+    if rotate {
         orbit.yaw -= motion.delta.x * 0.005;
         orbit.pitch = (orbit.pitch + motion.delta.y * 0.004).clamp(-0.1, 1.2);
+    }
+    if pan {
+        // The scene follows the pointer: one pixel of drag moves it one pixel on screen.
+        let world_per_px = 2.0 * orbit.distance * (FRAC_PI_4 / 2.0).tan() / window.height().max(1.0);
+        let right = transform.right().as_vec3();
+        let up = transform.up().as_vec3();
+        orbit.pan += (-right * motion.delta.x + up * motion.delta.y) * world_per_px;
     }
     let lines = match scroll.unit {
         MouseScrollUnit::Line => scroll.delta.y,
@@ -1055,5 +1098,6 @@ fn orbit_camera(
         orbit.distance * pitch.sin(),
         orbit.distance * pitch.cos() * yaw.cos(),
     );
-    *transform = Transform::from_translation(orbit.target + offset).looking_at(orbit.target, Vec3::Y);
+    let look = orbit.target + orbit.pan;
+    *transform = Transform::from_translation(look + offset).looking_at(look, Vec3::Y);
 }

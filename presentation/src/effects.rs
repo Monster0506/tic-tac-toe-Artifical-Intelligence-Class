@@ -14,7 +14,7 @@ use c4::random::SplitMix;
 use crate::game::{Game, GameFlow, Phase, Player, Settings};
 use crate::scene::{Disc, Falling, board_top, cell_x, cell_y};
 use crate::sizes::BoardSize;
-use crate::theme::{ACCENT, RED, TEXT, YELLOW};
+use crate::theme::{ACCENT, AQUA, EMBER, RED, YELLOW};
 
 /// Sent by the game when a table's match ends in a win.
 #[derive(Message, Clone)]
@@ -88,7 +88,7 @@ fn glowing(materials: &mut Assets<StandardMaterial>, colour: Color, glow: f32) -
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let assets = EffectAssets {
         beam: [glowing(&mut materials, RED, 6.0), glowing(&mut materials, YELLOW, 6.0)],
-        confetti: [RED, YELLOW, ACCENT, TEXT]
+        confetti: [RED, YELLOW, ACCENT, EMBER, AQUA]
             .into_iter()
             .map(|colour| glowing(&mut materials, colour, 1.5))
             .collect(),
