@@ -221,7 +221,7 @@ is different each time.
   sharp and readable. They fade and slide in with the slide's pieces.
 - **Live solve:** the solver slide's 7x6 position is solved by the project's own solver in a
   background thread at startup (about 70 ms), and its W/D/L column labels are shown.
-- **Keys:** Right / Space / click next beat, Left back a beat, R or Home back to the
+- **Keys:** Right / Space / click / J / L next beat, Left / H / K back a beat, R or Home back to the
   first slide (R also restarts the presenter window's talk and slide clocks), Esc back to the
   arena (also after the last slide). The slides sit on a stage far from the arena table,
   so the arena's match keeps its state.
@@ -444,6 +444,7 @@ Measured on the presentation laptop (Intel Iris Xe, 2400 x 1350 at 150% scaling)
 | H or ?            | Shortcut list             |
 | Esc               | Put the panes away        |
 | F11               | Full screen               |
+| Q                 | Quit the program          |
 | Left-drag         | Orbit                     |
 | Right-drag        | Pan                       |
 | Wheel             | Zoom                      |

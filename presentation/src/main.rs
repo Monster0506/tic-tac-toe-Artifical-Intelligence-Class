@@ -63,7 +63,7 @@ fn main() {
         clusters.gpu_clustering = None;
     });
     app.add_systems(PreStartup, theme::load_fonts);
-    app.add_systems(Update, toggle_fullscreen);
+    app.add_systems(Update, (toggle_fullscreen, quit));
     // C4_FPS=1 logs the frame rate once a second.
     if std::env::var("C4_FPS").is_ok() {
         app.add_plugins((
@@ -313,5 +313,12 @@ fn toggle_fullscreen(keys: Res<ButtonInput<KeyCode>>, mut windows: Query<&mut Wi
             }
             _ => bevy::window::WindowMode::Windowed,
         };
+    }
+}
+
+/// Q closes the program from anywhere.
+fn quit(keys: Res<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>) {
+    if keys.just_pressed(KeyCode::KeyQ) {
+        exit.write(AppExit::Success);
     }
 }

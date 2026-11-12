@@ -769,7 +769,7 @@ fn picker(root: &mut ChildSpawnerCommands<'_>, player: Player) {
 
 /// The shortcut list, over the control bar.
 fn help(column: &mut ChildSpawnerCommands<'_>) {
-    const KEYS: [(&str, &str); 11] = [
+    const KEYS: [(&str, &str); 12] = [
         ("Space", "Play or pause"),
         ("R", "Reset"),
         ("\u{2212}  +", "Board size"),
@@ -778,6 +778,7 @@ fn help(column: &mut ChildSpawnerCommands<'_>) {
         ("O", "Empty or random start"),
         ("P", "Slides"),
         ("F11", "Full screen"),
+        ("Q", "Quit"),
         ("Esc", "Close this list"),
         ("Left-drag", "Orbit"),
         ("Right-drag", "Pan"),

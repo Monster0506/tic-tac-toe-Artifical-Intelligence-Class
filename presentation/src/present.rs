@@ -1,8 +1,8 @@
 //! Presentation mode: a slide deck of 3D visuals with a short 2D title on each.
 //!
 //! The slides live on a "stage" far from the arena table. Entering the mode hides the
-//! arena UI and flies the camera to the stage; Esc flies back. Right / Space / click go
-//! forward, Left goes back. Each slide is a few beats: Next reveals the slide's next
+//! arena UI and flies the camera to the stage; Esc flies back. Right / Space / click /
+//! J / L go forward, Left / H / K go back. Each slide is a few beats: Next reveals the slide's next
 //! piece (a bar, a group of agents, the board growing) before moving to the next slide.
 //! Content is in `slides.rs`; what to say is in the speaker notes, not on the slides.
 //!
@@ -406,11 +406,11 @@ fn navigate(
     mut deck: ResMut<Deck>,
     mut mode: ResMut<NextState<Mode>>,
 ) {
-    let next = [KeyCode::ArrowRight, KeyCode::Space, KeyCode::PageDown, KeyCode::Enter, KeyCode::ArrowDown]
+    let next = [KeyCode::ArrowRight, KeyCode::Space, KeyCode::PageDown, KeyCode::Enter, KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::KeyL]
         .iter()
         .any(|&key| keys.just_pressed(key))
         || mouse.just_pressed(MouseButton::Left);
-    let back = [KeyCode::ArrowLeft, KeyCode::PageUp, KeyCode::Backspace, KeyCode::ArrowUp]
+    let back = [KeyCode::ArrowLeft, KeyCode::PageUp, KeyCode::Backspace, KeyCode::ArrowUp, KeyCode::KeyH, KeyCode::KeyK]
         .iter()
         .any(|&key| keys.just_pressed(key));
     if keys.just_pressed(KeyCode::Escape) {
