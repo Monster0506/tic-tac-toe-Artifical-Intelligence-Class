@@ -55,8 +55,16 @@ fn size_name(index: usize) -> String {
 
 // ================================================================== the table
 
-/// Scores by (random start, board index, time index): half-points per roster agent.
-pub type Scores = HashMap<(bool, usize, usize), [u32; 8]>;
+/// One setting's games, per roster agent.
+#[derive(Clone, Copy, Default)]
+pub struct Tally {
+    /// Half-points: 2 a win, 1 a draw.
+    pub points: [u32; 8],
+    pub games: [u32; 8],
+}
+
+/// Tallies by (random start, board index, time index).
+pub type Scores = HashMap<(bool, usize, usize), Tally>;
 
 pub fn scores() -> &'static Scores {
     static SCORES: OnceLock<Scores> = OnceLock::new();
@@ -74,14 +82,16 @@ pub fn scores() -> &'static Scores {
             let (Some(first), Some(second)) = (roster_index(&game.first), roster_index(&game.second)) else {
                 continue;
             };
-            let cell = scores.entry((game.start == "random", size, time)).or_insert([0; 8]);
+            let cell = scores.entry((game.start == "random", size, time)).or_default();
             let (to_first, to_second) = match game.result.as_str() {
                 "W" => (2, 0),
                 "L" => (0, 2),
                 _ => (1, 1),
             };
-            cell[first] += to_first;
-            cell[second] += to_second;
+            cell.points[first] += to_first;
+            cell.points[second] += to_second;
+            cell.games[first] += 1;
+            cell.games[second] += 1;
         }
         scores
     })
