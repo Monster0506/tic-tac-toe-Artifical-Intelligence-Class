@@ -1,5 +1,5 @@
 #set document(
-  title: "Train on 8×7, Test on 9×8: Connect Four Agents on a Board That Nobody Has Solved",
+  title: "Train on 8×7, Test on 9×8: Connect Four Agents on an Unsolved Board",
   author: ("TJ Raklovits", "Andrew Roddy"),
 )
 #set page(paper: "us-letter", margin: (x: 0.7in, y: 0.75in), columns: 2, numbering: "1")
@@ -155,7 +155,7 @@
 #place(top, scope: "parent", float: true, clearance: 1.2em)[
 #align(center)[
   #text(size: 16pt, weight: "bold")[
-    Train on 8×7, Test on 9×8: \ Connect Four Agents on a Board That Nobody Has Solved
+    Train on 8×7, Test on 9×8: \ Connect Four Agents on an Unsolved Board
   ]
   #v(0.4em)
   Group 3 #h(1.2em) TJ Raklovits #h(1.2em) Andrew Roddy \
@@ -164,86 +164,77 @@
 
 #pad(x: 2.2em, top: 0.2em, bottom: 0.1em)[
   #set text(size: 9.5pt)
-  *Abstract.* Connect Four is solved on the standard board of 7 columns and 6 rows and on the larger
-  8×7 board, but nobody has solved the 9×8 board. We ask whether agents that learn on a board with
-  known answers can still play well on a larger board where no answers exist. To study this, we wrote
-  an exact solver in Rust, checked it against 73,557 published positions without a single error, and
-  used it to label 106,898 positions on 8×7. We then built eight agents from four families (search,
-  search with a learned evaluation, a neural network, and strategy rules) and compared them in two
-  ways: by how often they pick a best move according to the solver, and by a tournament of 2,800
-  games on 9×8. The knowledge transferred with almost no loss. A convolutional network that saw only
-  8×7 positions picked a best move in 92.4% of the 8×7 test positions and in 91.0% of the 9×8 test
-  positions. Still, the accuracy of single moves did not decide the games. The agents that search won
-  the tournament, with Monte Carlo tree search at 740 Elo and alpha-beta search with a learned
-  evaluation at 722 Elo, while the network alone finished near the random baseline at 37 Elo. The
-  same network reached 647 Elo when it guided a search. On a board that we cannot solve, knowledge is
-  therefore most useful when it guides a search, not when it replaces one.
+  *Abstract.* Connect Four is solved on the standard board of 7 columns and 6 rows and on the larger 
+8×7 board, but there is not a published solution for the 9×8 board. We ask whether agents that learn 
+on a board with known answers can still play well on a larger board. To study this, we wrote a solver, 
+checked it against 73,557 published positions without a single error, and used it to label 106,898 
+positions on 8×7. We then compared agents from four families (search, search with a learned 
+evaluation, a neural network, and strategy rules) by how often they pick a best move according to 
+the solver and by a tournament of 2,800 games on 9×8. We found that there was almost no loss in 
+knowledge transfer. A convolutional network that saw only 8×7 positions picked a best move in 92.4% 
+of the 8×7 test positions and in 91.0% of the 9×8 test positions. However, the accuracy of single 
+moves did not decide the games. The search agents won the tournament, with Monte Carlo tree 
+search at 740 Elo and alpha-beta search with a learned evaluation at 722 Elo, while the network 
+alone finished near the random baseline at 37 Elo. The same network reached 647 Elo when it guided a 
+search.
 ]
 ]
 
 
 = Introduction
 
-Connect Four is a game for two players on an upright board. The players take turns, and on each turn
-a player drops one stone into a column, where it falls to the lowest empty cell. The first player to
-make a line of four stones, in a row, in a column, or on a diagonal, wins, and a full board with no
-such line is a draw. In this project the input is a position, which is the board together with the
-player to move, and the output is one column to play. For example, if the opponent has three stones
-in a line and the fourth cell can be filled on the next turn, the correct output is the column of
-that cell.
+Connect Four is a game for two players on an upright board. The players take turns, and on each turn a 
+player drops one stone into a column, where it falls to the lowest empty cell. The first player to 
+make a line of four stones, in a row, column, or diagonal, wins, and a full board with no such line is 
+a draw. In this project the input is a position, which is the board together with the player to move, 
+and the output is one column to play. For example, if the opponent has three stones in a line and the 
+fourth cell can be filled on the next turn, the correct output is the column of that cell.
 
-The standard board has 7 columns and 6 rows. Allis and, independently, Allen solved it in 1988, and
-it is a win for the first player under perfect play @allis1988 @tromp. Tromp later solved the larger
-8×7 board, which is also a win
-for the first player @tromp, but nobody has published a solution for the 9×8 board. The reason is
-the size of the game. The 7×6 board has about $4.5 times 10^12$ legal positions @tromp, and a simple
-upper limit on the number of cell patterns is $3^56 approx 5 times 10^26$ for 8×7 and
-$3^72 approx 2 times 10^34$ for 9×8. Our own exact solver needed more than 30 minutes for some 8×7
-positions that had only six stones on the board, and we estimate that a full solution of 9×8 would
-take about 15 years on our hardware. This makes 9×8 a useful test board, because an agent cannot
-look up the answer there, and nobody can give correct labels for the early part of the game.
+The standard board has 7 columns and 6 rows. It is a win for the first player under perfect play
+as solved by Allis and, independently, Allen in 1988 @allis1988 @tromp. Tromp later solved the larger
+8×7 board, which is also a win for the first player @tromp, but there is not a published solution for 
+the 9×8 board. This is because the 7×6 board has about $4.5 times 10^12$ legal positions @tromp, and a 
+simple upper limit on the number of cell patterns is $3^56 approx 5 times 10^26$ for 8×7 and $3^72 
+approx 2 times 10^34$ for 9×8. Our solver needed more than 30 minutes for some 8×7 positions that had 
+only six stones on the board, and we estimate that a full solution of 9×8 would take about 15 years on 
+our hardware. This makes 9×8 a useful test board because an agent cannot look up the answer there.
 
-Our question is about transfer. If agents learn on a board where a solver gives the correct answer,
-do they also play well on a larger board where no solver can help? And if some methods transfer
-better than others, why? To find out, we trained on 8×7, tested on 9×8, and wrote all of the
-software in Rust. We found that every agent kept its move accuracy on the new board, that the agents
-that search were far stronger in games than the agents that do not, and that the three best agents
-were so close to each other that their order changed with the start positions. Our contributions are:
+If agents learn on a board where a solver gives the correct answer, do they also play well on a larger 
+board where no solver can help? And if some methods transfer better than others, why? To find out,
+we trained on 8×7 and tested on 9×8. We found that every agent kept its move accuracy on the new 
+board, that the agents that search were far stronger in games than the agents that do not, and that 
+the three best agents were so close to each other that their order changed with the start positions. 
+Our contributions are:
 
 + An exact solver for any board size, with 0 errors on 73,557 published positions, and three labeled
-  data sets that it made: 106,898 training positions and 2,000 opening positions on 8×7, and 9,990
-  late positions on 9×8.
+data sets that it made: 106,898 training positions and 2,000 opening positions on 8×7, and 9,990
+late positions on 9×8.
 + Eight agents from four families on one shared interface, which include a logistic regression and a
-  convolutional network that we trained on 8×7 labels only.
+convolutional network that we trained on 8×7 labels only.
 + A transfer study with two measures, move accuracy against exact labels and a 9×8 tournament,
-  together with studies that explain the results: search depth, time for each move, rule ablation,
-  network size, and board size.
-
 
 = Related Work
 
 *Solvers for Connect Four.* Allis solved 7×6 with a program that applies nine strategy rules, such
-as _claimeven_, each proved correct, together with conspiracy-number search and search tables
-@allis1988. Tromp later solved many board sizes by search
-and published a data set of 67,557 labeled 7×6 positions @tromp @uci. Pons then described the design
-of a modern solver step by step: alpha-beta search @knuth1975, a board stored as bits, a good move
-order, and a table of positions that the search has already seen @pons. Our solver follows this
-design. All of this work measures play on a single board size, whereas we ask what transfers when
-the board grows.
+as claimeven, together with conspiracy-number search and search tables @allis1988. Tromp later solved 
+many board sizes by search and published a data set of 67,557 labeled 7×6 positions @tromp @uci. Pons 
+described the design of a modern solver step by step: alpha-beta search @knuth1975, a board stored as 
+bits, a good move order, and a table of positions that the search has already seen @pons. Our solver 
+follows this design. All of this work measures play on a single board size, whereas we ask what 
+transfers when the board grows.
 
-*Search for game playing.* Alpha-beta search with an evaluation function at a depth limit is the
-standard method for games of this type @russell2020. Monte Carlo tree search (MCTS) needs no
-evaluation function at all. Its most common form, UCT @kocsis2006, selects moves in the tree with the
-UCB1 rule @auer2002, and many variants exist @browne2012. Winands et al. showed how to keep proven
-wins and losses in the tree @winands2008, and we use a small form of this idea.
+*Search for game playing.* The standard method for playing games at this type is Alpha-beta search 
+with an evaluation function at a depth limit @russell2020. Monte Carlo tree search (MCTS) needs 
+no evaluation function. Its most common form, UCT @kocsis2006, selects moves in the tree with the UCB1 
+rule @auer2002, and many variants exist @browne2012. Winands et al. showed how to keep proven wins and 
+losses in the tree @winands2008, and we use a small form of this idea.
 
 *Networks that guide a search.* AlphaZero trains a network by self-play and uses it to guide MCTS
-@silver2018, and MuZero uses a similar rule to select moves in the tree @schrittwieser2020. Our
-guided agent uses the same rule, but its network learns from solver labels instead of from
-self-play. A fully convolutional network has no layer with a fixed input size @long2015, so it can
-read a board of any size. KataGo uses this property to train one network on many Go board sizes
-@wu2019, while we train on one size only and test on a size that the network never saw. Finally, we
-rank the agents with Elo ratings @elo1978, which we fit with the Bradley-Terry model @bradley1952.
+@silver2018. MuZero uses a similar rule to select moves in the tree @schrittwieser2020. Our
+guided agent learns from solver labels instead of from self-play to guide search. A fully 
+convolutional network has no layer with a fixed input size @long2015, so it can read a board of any 
+size. KataGo uses this property to train one network on many Go board sizes @wu2019, while we train on 
+one size only and test on a size that the network never saw. We rank the agents with Elo ratings @elo1978, which we fit with the Bradley-Terry model @bradley1952.
 
 
 = Methods
@@ -288,11 +279,10 @@ the columns that are not full. With perfect play from both players, each positio
 result for the player to move: loss, draw, or win. For each legal column $c$, let $y_c (s)$ be the
 exact result for the player to move after a stone in column $c$, with the order loss $<$ draw $<$
 win. An agent is a function $pi$ that takes a position and a time limit and returns one legal
-column. The time limit is 1 second for each move unless we say otherwise. The project combines three
-connected tasks:
+column. The time limit is 1 second for each move unless we say otherwise. We are evaluating these 
+tasks:
 
-+ *Game playing (search and planning).* Each agent must select moves that win games against the
-  other agents on 9×8.
++ *Game playing.* Each agent must select moves that win games against the other agents on 9×8.
 + *Supervised learning.* The learned agents predict exact results from solver labels. The logistic
   regression predicts the result of a position from four features (Section 3.2). The network
   predicts one of three classes (win, draw, loss) for each column (Section 3.3).
@@ -307,8 +297,8 @@ than one correct move, so a random legal move is already correct in about 70% of
 
 *Shared software.* The board engine stores a position as two bit patterns, one for the stones of the
 player to move and one for all stones. It uses 64 bits for boards up to 8×7 and 128 bits for 9×8,
-and the same code runs for every size. All agents share one interface: a position and a deadline go
-in, and a column comes out.
+and the same code runs for every size. All agents use the same interface, where we input a position and
+output a column.
 
 *Data.* We made positions by playing random games in which a player never makes a move that lets the
 opponent win at once, and we removed duplicates and mirror images. The solver from Section 3.2 then
@@ -339,19 +329,19 @@ example, the player to move wins, and columns 3, 5 and 7 are the winning moves.
 
 *Exact solver.* The solver is a depth-first search with alpha-beta pruning @knuth1975 over the three
 possible results. Pruning lets the search skip branches that cannot change the result. The solver
-has no evaluation function and always searches until the game ends, so each answer is exact. Three
-methods from published solvers @tromp @pons make it fast. First, bit operations detect a win in one
-move before the search goes deeper. Second, the search tries the center columns first and then sorts
-the moves by the number of threats that each move creates, where a _threat_ is an empty cell that
-would complete a line of four for one player. Third, a table with about two million slots stores a
-lower and an upper limit for the result of each position that the search has already seen. Each slot
-holds two positions, the one that needed the most work and the most recent one. To label a position,
-the solver runs one search for each legal column.
+has no evaluation function and always searches until the game ends. We used existing methods from 
+published solvers @tromp @pons to make it fast. Bit operations detect a win in one move before the 
+search goes deeper. The search tries the center columns first and then sorts the moves by the number of 
+threats that each move creates, where a threat is an empty cell that would complete a line of four for 
+one player. Finally, a table with about two million slots stores a lower and an upper limit for the 
+result of each position that the search has already seen. Each slot holds two positions, the one that 
+needed the most work and the most recent one. To label a position, the solver runs one search for each 
+legal column.
 
-*Solver agent.* The solver agent asks the solver for the result of each legal column until the
-deadline and plays the column with the best proven result. A column that the solver could not finish
-ranks above a proven loss, and the column nearest to the center wins a tie. So when the solver cannot
-finish, this agent plays the column nearest to the center that is not a proven loss.
+*Solver agent.* this agent asks the solver for the result of each legal column until the
+deadline and plays the column with the best proven result. An unfinished column ranks above a proven 
+loss, and the nearest column to the center wins a tie. So when the solver cannot finish, this agent 
+plays the column nearest to the center that is not a proven loss.
 
 *Alpha-beta with a handcrafted evaluation.* This agent searches with alpha-beta pruning to a depth
 limit and scores the positions at the limit. It searches to depth 1, then 2, then 3, and so on until
@@ -361,11 +351,11 @@ $ V_w (s) = w^top f(s), \ f(s) = (t_"own"^"good", t_"own"^"other", t_"opp"^"good
 Here $t_"own"$ counts the threats of the player to move and $t_"opp"$ counts the threats of the
 opponent. The split into good rows and other rows comes from the parity (odd or even) rule of Allis
 @allis1988. Near the end of a game the players must fill the columns in turn, so the row of a threat
-decides which player gets to play there. A row is _good_ for a player if that player gets its cells
+decides which player gets to play there. A row is good for a player if that player gets its cells
 when all other columns are filled first. On a board with $C$ columns and $R$ rows, a cell in row $r$
 (counted from 0 at the bottom) of the last open column is filled after $(C - 1) R + r$ stones, so it
 belongs to the first player when this number is even. The agent computes this rule from the board
-size, which means that the evaluation needs no change for 9×8. The handcrafted weights are our own
+size, which means that the evaluation needs no change for 9×8. The handcrafted weights are a tested 
 estimate: $w = (4, 1, -4, -1)$.
 
 *Alpha-beta with a learned evaluation.* This agent uses the same search and the same four features,
@@ -382,16 +372,15 @@ the threats of the player to move.
 
 *Allis rule agent.* This agent uses rules only and never looks more than one move ahead. It applies
 the first rule that gives a move: (1) play a move that wins at once, (2) block a win of the
-opponent, (3) play the _claimeven_ follow-up, which is to play on top of the last stone of the
+opponent, (3) play the claimeven follow-up, which is to play on top of the last stone of the
 opponent if that cell is on a good row and the move is safe, (4) play the safe move with the best
-balance of good-row threats, and (5) play the column nearest to the center. A move is _safe_ if it
+balance of good-row threats, and (5) play the column nearest to the center. A move is safe if it
 does not let the opponent win at once. The agent uses only this subset of the nine rules of Allis.
 
 == Sampling and Neural Agents (Andrew Roddy)
 
 *Safe random.* This baseline plays a move that wins at once if one exists, and otherwise a move that
-blocks a win of the opponent. In all other positions it plays a random legal move. It is the zero
-point of the Elo scale.
+blocks a win of the opponent. In all other positions it plays a random legal move. We based our Elo scale on this as the zero value.
 
 *Monte Carlo tree search.* MCTS builds a tree of positions in memory, and each simulation has four
 steps. It first goes down the tree from the current position, and at each node it selects the child
@@ -399,7 +388,7 @@ $c$ with the largest value of
 $ Q(c) + k sqrt((ln N) / n_c), quad k = sqrt(2), $ <eq:uct>
 where $Q(c)$ is the mean result of the simulations through $c$, $n_c$ is their count, and $N$ is the
 count for the parent @auer2002 @kocsis2006. At the leaf that it reaches, the search adds the
-children, plays random legal moves until the game ends (a _playout_), and adds the result to each
+children, plays random legal moves until the game ends (a playout), and adds the result to each
 node on the path. When the time ends, the agent plays the move with the most simulations. This agent
 needs no evaluation function and no training. We added one rule that plain UCT does not have: a move
 that wins at once is a proven win, and the search always selects it, while a move that lets the
@@ -438,11 +427,11 @@ runs far fewer simulations in the same time.
 validation part of the training lines, and we did not use the held-out lines, the opening set, or the
 9×8 set to make any decision.
 
-*Metrics.* We use three measures. The first is _move accuracy_ (@eq:acc) with 95% Wilson intervals
-@wilson1927. The second is _wins kept_: the agent plays 8×7 games against the exact solver, starting
+*Metrics.* We use three measures. The first is move accuracy (@eq:acc) with 95% Wilson intervals
+@wilson1927. The second is wins kept: the agent plays 8×7 games against the exact solver, starting
 from 200 held-out positions with 16 to 20 stones, once on each side. The solver gets 600 s for each
 move and the agent gets 1 s, and we report the share of the 198 games in which the agent started
-from a won position and won the game. The third is the _win rate_ and the _Elo_ rating in the
+from a won position and won the game. The third is the win rate and the Elo rating in the
 tournament. We fit the ratings $theta$ by maximum likelihood with the model
 $ P(a "beats" b) = sigma(theta_a - theta_b), \ "Elo"_a = 400 / (ln 10) dot theta_a, $ <eq:elo>
 where a draw counts as half a win and safe random is fixed at 0. A difference of 400 Elo means odds
@@ -451,12 +440,9 @@ of 10 to 1. To give a 95% interval for the difference between two agents, we use
 
 *Tournament and baselines.* The eight agents play on 9×8. Each ordered pair of agents (56 pairs)
 plays from the same 50 random openings with 4 to 6 stones, so each pair plays 100 games and the
-tournament has 2,800 games. Safe random is the baseline agent. For move accuracy the baseline is a
-random legal move, and for the evaluation fit it is a model that always predicts the most common
+tournament has 2,800 games. Safe random is the baseline agent. For move accuracy, the baseline is a
+random legal move, and for the evaluation fit, it is a model that always predicts the most common
 result.
-
-*Implementation.* The library and its tools are about 4,000 lines of Rust, with about 2,400 more
-lines of tests. The network runs on the CPU with Burn 0.21.
 
 == Main Results
 
@@ -510,9 +496,8 @@ lines of tests. The network runs on the CPU with Burn 0.21.
     [---], [---], [---],
     heavy,
   ),
-  caption: [Main results with 1 s for each move. The best value in each column is in *bold*. The
-    accuracy sets have 10,689 (held-out), 2,000 (openings) and 9,990 (late 9×8) positions, and each
-    95% interval is at most ±2.0 points. Each agent played 700 tournament games.],
+  caption: [Main results with 1 s for each move. The best value in each column is in *bold*. Each 
+95% interval is at most ±2.0 points. Each agent played 700 tournament games.],
 ) <tab:main>
 
 *Transfer.* @tab:main gives the main results. All agents kept their accuracy on the 9×8 board. The
@@ -526,9 +511,7 @@ not show a real change.
 accuracy. The solver agent had 97.8% accuracy on late 9×8 positions but won only 23% of its games,
 and the network had 91.0% accuracy but won only 20%. In contrast, the four agents that search with a
 time limit (MCTS, the two alpha-beta agents, and network-guided MCTS) each scored at least 92 points
-out of 100 against each of the other four agents (@tab:h2h). Games between two of these four agents
-were long, with 49 stones on average on a board of 72 cells, while all other games were short, with
-24 stones on average.
+out of 100 against each of the other four agents (@tab:h2h).
 
 *The top of the table.* MCTS and alpha-beta with the learned evaluation were almost equal in their
 own games (51 to 49 points). Their difference in Elo is 18 points with a 95% interval from −22 to
@@ -575,8 +558,7 @@ ahead of the handcrafted evaluation by 32 Elo, but its interval (−10 to +73) i
         heavy,
       ),
       caption: [Points of the row agent against the column agent in 100 games on 9×8 (a win is 1, a
-        draw is 0.5). AB-L and AB-H are alpha-beta with the learned and the handcrafted evaluation,
-        and N-MCTS is network-guided MCTS. Agents by both members.],
+        draw is 0.5).],
     ) <tab:h2h>
   ],
   [
@@ -597,14 +579,14 @@ ahead of the handcrafted evaluation by 32 Elo, but its interval (−10 to +73) i
         )),
         legend-columns: 3,
       ),
-      caption: [Move accuracy on 8×7 by the number of stones (opening set at 10--12 stones, held-out
-        set for the others). Agents by both members.],
+      caption: [Move accuracy on 8×7 by the number of stones (opening set at 10-12 stones, held-out
+        set for the others).],
     ) <fig:phase>
   ],
 )
 
-*Accuracy by phase.* @fig:phase shows the accuracy by the number of stones on the board. The solver
-agent is exact when 27 or more stones are on the board, but it falls to 80.7% in the openings, where
+*Accuracy by phase.* @fig:phase shows the accuracy by the number of stones on the board. When 27 or more 
+stones are on the board, the solver agent is correct, but it falls to 80.7% in the openings, where
 it cannot finish in 1 s. The agents that search with a time limit lose only a few points in the
 openings. The network is the only agent whose accuracy does not rise late in the game, and in the
 openings network-guided MCTS has the best accuracy of all agents (94.6%).
@@ -651,7 +633,7 @@ labels two times, on the laptop and on the cloud computer, and found 0 differenc
         ),
       ),
       caption: [Time of the exact solver for late 9×8 positions (about 270 positions for each number
-        of stones, one core each). By TJ Raklovits.],
+        of stones, one core each).],
     ) <fig:wall>
   ],
   [
@@ -674,7 +656,7 @@ labels two times, on the laptop and on the cloud computer, and found 0 differenc
         legend-columns: 2,
       ),
       caption: [Move accuracy of alpha-beta at a fixed depth, on the first 1,000 positions of the
-        held-out set (8×7) and of the late set (9×8). By TJ Raklovits.],
+        held-out set (8×7) and of the late set (9×8).],
     ) <fig:depth>
   ],
 )
@@ -721,7 +703,7 @@ move). The curves for 9×8 have the same shape. More depth still wins games, how
         heavy,
       ),
       caption: [Prediction of the result of a position (win or not) on the 10,689 held-out
-        positions. By TJ Raklovits.],
+        positions.],
     ) <tab:fit>
   ],
   [
@@ -747,7 +729,7 @@ move). The curves for 9×8 have the same shape. More depth still wins games, how
         heavy,
       ),
       caption: [Ablation of the Allis rule agent: score (%) in 400 games with 95% intervals, against
-        safe random except in the last row. By TJ Raklovits.],
+        safe random except in the last row.],
     ) <tab:allis>
   ],
 )
@@ -814,7 +796,7 @@ scale, so small changes between time limits are not certain.
         legend-columns: 4,
       ),
       caption: [Elo of the four best agents in four tournaments of 2,800 games with different time
-        limits. By Andrew Roddy.],
+        limits.],
     ) <fig:time>
   ],
   [
@@ -836,7 +818,7 @@ scale, so small changes between time limits are not certain.
         heavy,
       ),
       caption: [Move accuracy (%) by time for each move, on 600 held-out positions (8×7) and 300
-        late positions (9×8). By Andrew Roddy.],
+        late positions (9×8).],
     ) <tab:budget>
     #v(0.2em)
     #figure(
@@ -914,7 +896,7 @@ sets.
   ),
   caption: [Board size study: share of the points (%) of each agent in a full tournament on each
     board size, with 0.25 s for each move and random openings (1,120 games for each board). The
-    last column is the share of games that ended in a draw. By Andrew Roddy.],
+    last column is the share of games that ended in a draw.],
 ) <tab:sizes>
 
 *Board size.* To see how the order of the agents depends on the board, we ran the tournament on six
@@ -983,7 +965,7 @@ than 30 minutes each), and the network is small and trained for only 12 epochs.
 = Conclusion
 
 We trained Connect Four agents on the solved 8×7 board and tested them on the 9×8 board, which
-nobody has solved. Three results are clear. First, on a board that we cannot solve, search wins: the
+is not solved. Three results are clear. First, on a board that we cannot solve, search wins: the
 four agents that search with a time limit were far above all agents that do not. Second, the
 knowledge from 8×7 transferred to 9×8 with almost no loss, both for four learned weights and for a
 network with 186,627 weights. Third, knowledge is most useful as a guide for search, since the same
